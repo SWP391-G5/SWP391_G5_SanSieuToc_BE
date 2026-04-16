@@ -22,6 +22,7 @@ function normalizeAccount(accountDoc) {
     username: accountDoc.username,
     email: accountDoc.email,
     name: accountDoc.name,
+    image: accountDoc.image || '',
     role: accountDoc.roleID?.name,
     accountType: 'admin',
   };
