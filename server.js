@@ -43,4 +43,29 @@ app.get('/', async(req, res)=>{
 });
 
 const PORT = process.env.PORT || 9999;
+
+// ============================================
+// Error Handler Middleware
+// ============================================
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  
+  res.status(status).json({
+    success: false,
+    message: message,
+    error: process.env.NODE_ENV === 'development' ? err : undefined
+  });
+});
+
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found'
+  });
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -9,7 +9,7 @@ const TransactionSchema = new mongoose.Schema(
     fromWalletID: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Wallet',
-      required: true,
+      required: false, // Optional for top-up transactions
     },
     toWalletID: {
       type: mongoose.Schema.Types.ObjectId,
