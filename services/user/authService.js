@@ -7,6 +7,7 @@ const { generateNumericCode, hashOtpCode, verifyOtpCode } = require('../../utils
 const {
   isNonEmptyString,
   isValidEmail,
+  isValidName,
   isValidPassword,
   isValidUsername,
   normalizeEmail,
@@ -107,6 +108,9 @@ async function registerCustomer(payload) {
     };
   }
 
+  if (!isValidName(name)) {
+    return { status: 400, body: { message: 'Họ tên không hợp lệ.' } };
+  }
   if (!isValidEmail(email)) {
     return { status: 400, body: { message: 'Email không hợp lệ.' } };
   }
@@ -114,7 +118,7 @@ async function registerCustomer(payload) {
     return { status: 400, body: { message: 'Username không hợp lệ.' } };
   }
   if (!isValidPassword(password)) {
-    return { status: 400, body: { message: 'Mật khẩu phải có ít nhất 6 ký tự.' } };
+    return { status: 400, body: { message: 'Mật khẩu phải từ 6 đến 128 ký tự.' } };
   }
 
   const normalizedEmail = normalizeEmail(email);

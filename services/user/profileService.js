@@ -3,7 +3,17 @@ const Wallet = require('../../models/Wallet');
 const { verifyPassword, hashPassword } = require('../../utils/password');
 const { generateNumericCode, hashOtpCode, verifyOtpCode } = require('../../utils/otp');
 const { isEmailConfigured, sendVerificationCodeEmail } = require('../../utils/mailer');
-const { isNonEmptyString, isValidPassword, isValidEmail, normalizeEmail } = require('../../utils/validators');
+const {
+  isNonEmptyString,
+  isValidAddress,
+  isValidEmail,
+  isValidImageUrl,
+  isValidName,
+  isValidPassword,
+  isValidPhone,
+  normalizeEmail,
+  normalizePhone,
+} = require('../../utils/validators');
 
 function normalizeUserProfile(accountDoc) {
   return {
@@ -63,20 +73,34 @@ async function updateProfile(userId, payload) {
   }
 
   if (typeof name !== 'undefined') {
-    if (!isNonEmptyString(name)) return { status: 400, body: { message: 'Họ tên không hợp lệ.' } };
-    account.name = String(name).trim().slice(0, 120);
+    if (typeof name !== 'string' || !isValidName(name)) {
+      return { status: 400, body: { message: 'Họ tên không hợp lệ.' } };
+    }
+    account.name = name.trim();
   }
 
   if (typeof phone !== 'undefined') {
-    account.phone = String(phone || '').trim().slice(0, 30);
+    if (typeof phone !== 'string' || !isValidPhone(phone)) {
+      return {
+        status: 400,
+        body: { message: 'Số điện thoại không hợp lệ (10 chữ số, bắt đầu bằng 0; ví dụ 09xxxxxxxx).' },
+      };
+    }
+    account.phone = normalizePhone(phone);
   }
 
   if (typeof address !== 'undefined') {
-    account.address = String(address || '').trim().slice(0, 200);
+    if (typeof address !== 'string' || !isValidAddress(address)) {
+      return { status: 400, body: { message: 'Địa chỉ không hợp lệ.' } };
+    }
+    account.address = address.trim();
   }
 
   if (typeof image !== 'undefined') {
-    account.image = String(image || '').trim().slice(0, 2000);
+    if (typeof image !== 'string' || !isValidImageUrl(image)) {
+      return { status: 400, body: { message: 'Ảnh không hợp lệ.' } };
+    }
+    account.image = image.trim();
   }
 
   await account.save();
@@ -94,7 +118,7 @@ async function changePassword(userId, payload) {
   }
 
   if (!isValidPassword(newPassword)) {
-    return { status: 400, body: { message: 'Mật khẩu mới phải có ít nhất 6 ký tự.' } };
+    return { status: 400, body: { message: 'Mật khẩu mới phải từ 6 đến 128 ký tự.' } };
   }
 
   const account = await UserAccount.findById(userId);

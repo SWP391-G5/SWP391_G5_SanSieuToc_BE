@@ -1,4 +1,4 @@
-const profileService = require('../../services/user/profileService');
+const profileService = require('../../services/admin/profileService');
 const { uploadImageBuffer } = require('../../utils/cloudinaryConfig');
 
 async function getProfile(req, res) {
@@ -24,21 +24,8 @@ async function uploadAvatar(req, res) {
     return res.status(400).json({ message: 'Vui lòng chọn file ảnh.' });
   }
 
-  const roleKey = String(req.user?.role || '').trim().toLowerCase();
-  const folder = roleKey === 'owner' ? 'avatars/owners' : 'avatars/customers';
-
-  const imageUrl = await uploadImageBuffer(file.buffer, folder);
+  const imageUrl = await uploadImageBuffer(file.buffer, 'avatars/admins');
   return res.status(200).json({ imageUrl });
-}
-
-async function requestEmailChange(req, res) {
-  const { status, body } = await profileService.requestEmailChange(req.user?.sub, req.body);
-  return res.status(status).json(body);
-}
-
-async function verifyEmailChange(req, res) {
-  const { status, body } = await profileService.verifyEmailChange(req.user?.sub, req.body);
-  return res.status(status).json(body);
 }
 
 module.exports = {
@@ -46,6 +33,4 @@ module.exports = {
   updateProfile,
   changePassword,
   uploadAvatar,
-  requestEmailChange,
-  verifyEmailChange,
 };
