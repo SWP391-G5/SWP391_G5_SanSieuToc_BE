@@ -30,6 +30,12 @@ const AdminAccountSchema = new mongoose.Schema(
       trim: true,
       maxlength: 30,
     },
+    address: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 200,
+    },
     image: {
       type: String,
       default: '',
