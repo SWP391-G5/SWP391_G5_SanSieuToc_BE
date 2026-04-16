@@ -1,0 +1,35 @@
+{
+  "name": "back-end",
+  "version": "1.0.0",
+  "description": "sansieutocbe",
+  "main": "server.js",
+  "scripts": {
+    "start": "nodemon server"
+  },
+  "keywords": [
+    "nodejs",
+    "restful",
+    "api"
+  ],
+  "author": "sansieutocbe",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "body-parser": "^1.20.3",
+    "cloudinary": "^2.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.10.1",
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
