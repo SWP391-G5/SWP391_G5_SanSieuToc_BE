@@ -9,6 +9,10 @@ const BookingServiceHistory = require('./BookingServiceHistory');
 const Wallet = require('./Wallet');
 const Transaction = require('./Transaction');
 const Feedback = require('./Feedback');
+const MarketingResource = require('./MarketingResource');
+const Post = require('./Post');
+const Voucher = require('./Voucher');
+const Privacy = require('./Privacy');
 
 module.exports = {
   Role,
@@ -22,4 +26,8 @@ module.exports = {
   Wallet,
   Transaction,
   Feedback,
+  MarketingResource,
+  Post,
+  Voucher,
+  Privacy,
 };
