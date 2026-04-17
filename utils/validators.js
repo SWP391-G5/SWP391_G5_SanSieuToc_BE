@@ -19,8 +19,12 @@ function isValidUsername(username) {
 
 function isValidPassword(password) {
   if (!isNonEmptyString(password)) return false;
-  // Keep minimal, but cap to avoid abuse
-  return password.length >= 6 && password.length <= 128;
+
+  const p = String(password);
+  if (p.length < 6 || p.length > 128) return false;
+
+  // Must include: uppercase, lowercase, number, special character. No whitespace.
+  return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])\S{6,128}$/.test(p);
 }
 
 // Vietnamese personal name (Unicode letters + spaces/hyphen/apostrophe)

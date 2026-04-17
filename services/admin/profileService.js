@@ -1,12 +1,16 @@
 const AdminAccount = require('../../models/AdminAccount');
 const { verifyPassword, hashPassword } = require('../../utils/password');
+const { generateNumericCode, hashOtpCode, verifyOtpCode } = require('../../utils/otp');
+const { isEmailConfigured, sendVerificationCodeEmail } = require('../../utils/mailer');
 const {
   isNonEmptyString,
   isValidAddress,
+  isValidEmail,
   isValidImageUrl,
   isValidName,
   isValidPassword,
   isValidPhone,
+  normalizeEmail,
   normalizePhone,
 } = require('../../utils/validators');
 
@@ -103,7 +107,12 @@ async function changePassword(adminId, payload) {
   }
 
   if (!isValidPassword(newPassword)) {
-    return { status: 400, body: { message: 'Mật khẩu mới phải từ 6 đến 128 ký tự.' } };
+    return {
+      status: 400,
+      body: {
+        message: 'Mật khẩu mới phải 6-128 ký tự và gồm chữ hoa, chữ thường, số, ký tự đặc biệt (không có khoảng trắng).',
+      },
+    };
   }
 
   const account = await AdminAccount.findById(adminId);
@@ -125,8 +134,135 @@ async function changePassword(adminId, payload) {
   return { status: 200, body: { message: 'Đổi mật khẩu thành công.' } };
 }
 
+async function requestEmailChange(adminId, payload) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
+
+  const { newEmail } = payload || {};
+
+  if (!isNonEmptyString(newEmail) || !isValidEmail(newEmail)) {
+    return { status: 400, body: { message: 'Email không hợp lệ.' } };
+  }
+
+  if (!isEmailConfigured()) {
+    return { status: 500, body: { message: 'Chức năng gửi email chưa được cấu hình.' } };
+  }
+
+  const account = await AdminAccount.findById(adminId).populate('roleID');
+  if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
+  }
+
+  const roleName = String(account.roleID?.name || '').trim().toLowerCase();
+  if (roleName !== 'manager') {
+    return { status: 403, body: { message: 'Bạn không có quyền thực hiện.' } };
+  }
+
+  const normalizedNewEmail = normalizeEmail(newEmail);
+  const currentEmail = normalizeEmail(account.email);
+
+  if (normalizedNewEmail === currentEmail) {
+    return { status: 400, body: { message: 'Email mới phải khác email hiện tại.' } };
+  }
+
+  const existing = await AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
+  if (existing) {
+    return { status: 409, body: { message: 'Email đã tồn tại.' } };
+  }
+
+  const now = Date.now();
+  const resendAt = account.emailChange?.resendAvailableAt;
+  const pendingNewEmail = account.emailChange?.newEmail;
+
+  if (pendingNewEmail === normalizedNewEmail && resendAt && resendAt.getTime() > now) {
+    const seconds = Math.ceil((resendAt.getTime() - now) / 1000);
+    return { status: 429, body: { message: `Vui lòng chờ ${seconds} giây để gửi lại mã.` } };
+  }
+
+  const code = generateNumericCode(6);
+  const codeHash = hashOtpCode(code);
+  const expiresAt = new Date(now + 5 * 60 * 1000);
+  const resendAvailableAt = new Date(now + 60 * 1000);
+
+  account.emailChange = {
+    newEmail: normalizedNewEmail,
+    codeHash,
+    expiresAt,
+    resendAvailableAt,
+  };
+  await account.save();
+
+  try {
+    await sendVerificationCodeEmail({ to: normalizedNewEmail, name: account.name, code });
+  } catch (e) {
+    account.emailChange = { newEmail: '', codeHash: '', expiresAt: undefined, resendAvailableAt: undefined };
+    await account.save();
+    return { status: 500, body: { message: 'Gửi mã xác thực thất bại. Vui lòng thử lại sau.' } };
+  }
+
+  return {
+    status: 200,
+    body: { message: 'Mã xác thực đã được gửi về email mới.', email: normalizedNewEmail, expiresAt },
+  };
+}
+
+async function verifyEmailChange(adminId, payload) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
+
+  const { newEmail, code } = payload || {};
+
+  if (!isNonEmptyString(newEmail) || !isValidEmail(newEmail) || !isNonEmptyString(code)) {
+    return { status: 400, body: { message: 'Vui lòng nhập email mới và mã xác thực.' } };
+  }
+
+  const account = await AdminAccount.findById(adminId).populate('roleID');
+  if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
+  }
+
+  const roleName = String(account.roleID?.name || '').trim().toLowerCase();
+  if (roleName !== 'manager') {
+    return { status: 403, body: { message: 'Bạn không có quyền thực hiện.' } };
+  }
+
+  const normalizedNewEmail = normalizeEmail(newEmail);
+  const pending = account.emailChange || {};
+
+  if (!pending.newEmail || pending.newEmail !== normalizedNewEmail) {
+    return { status: 400, body: { message: 'Yêu cầu đổi email không hợp lệ hoặc đã hết hạn.' } };
+  }
+
+  if (!pending.expiresAt || pending.expiresAt.getTime() < Date.now()) {
+    return { status: 400, body: { message: 'Mã xác thực không đúng hoặc đã hết hạn.' } };
+  }
+
+  const ok = verifyOtpCode({ code: String(code).trim(), codeHash: pending.codeHash });
+  if (!ok) {
+    return { status: 400, body: { message: 'Mã xác thực không đúng hoặc đã hết hạn.' } };
+  }
+
+  const exists = await AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
+  if (exists) {
+    return { status: 409, body: { message: 'Email đã tồn tại.' } };
+  }
+
+  account.email = normalizedNewEmail;
+  account.emailChange = { newEmail: '', codeHash: '', expiresAt: undefined, resendAvailableAt: undefined };
+  await account.save();
+
+  return {
+    status: 200,
+    body: { message: 'Đổi email thành công.', user: normalizeAdminProfile(account) },
+  };
+}
+
 module.exports = {
   getProfile,
   updateProfile,
   changePassword,
+  requestEmailChange,
+  verifyEmailChange,
 };

@@ -118,7 +118,12 @@ async function changePassword(userId, payload) {
   }
 
   if (!isValidPassword(newPassword)) {
-    return { status: 400, body: { message: 'Mật khẩu mới phải từ 6 đến 128 ký tự.' } };
+    return {
+      status: 400,
+      body: {
+        message: 'Mật khẩu mới phải 6-128 ký tự và gồm chữ hoa, chữ thường, số, ký tự đặc biệt (không có khoảng trắng).',
+      },
+    };
   }
 
   const account = await UserAccount.findById(userId);

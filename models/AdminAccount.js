@@ -57,6 +57,14 @@ const AdminAccountSchema = new mongoose.Schema(
       enum: ['Active', 'InActive'],
       default: 'Active',
     },
+
+    // Used for "change email" flow (OTP to new email)
+    emailChange: {
+      newEmail: { type: String, default: '', trim: true, lowercase: true, maxlength: 254 },
+      codeHash: { type: String, default: '' },
+      expiresAt: { type: Date },
+      resendAvailableAt: { type: Date },
+    },
   },
   { timestamps: true }
 );

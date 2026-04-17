@@ -45,4 +45,8 @@ router.put('/profile/password', asyncHandler(profileController.changePassword));
 
 router.post('/profile/avatar', uploadSingleImage('image'), asyncHandler(profileController.uploadAvatar));
 
+// Managers must verify email change
+router.post('/profile/email/request', authorizeRoles(['Manager']), asyncHandler(profileController.requestEmailChange));
+router.post('/profile/email/verify', authorizeRoles(['Manager']), asyncHandler(profileController.verifyEmailChange));
+
 module.exports = router;

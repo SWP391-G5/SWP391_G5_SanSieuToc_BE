@@ -1,5 +1,5 @@
 const profileService = require('../../services/user/profileService');
-const { uploadImageBuffer } = require('../../utils/cloudinaryConfig');
+const { uploadImageBuffer } = require('../../utils/cloudinary/uploadImageBuffer');
 
 async function getProfile(req, res) {
   const { status, body } = await profileService.getProfile(req.user?.sub);
@@ -27,8 +27,12 @@ async function uploadAvatar(req, res) {
   const roleKey = String(req.user?.role || '').trim().toLowerCase();
   const folder = roleKey === 'owner' ? 'avatars/owners' : 'avatars/customers';
 
-  const imageUrl = await uploadImageBuffer(file.buffer, folder);
-  return res.status(200).json({ imageUrl });
+  const { url } = await uploadImageBuffer(file.buffer, { folder });
+
+  const { status, body } = await profileService.updateProfile(req.user?.sub, { image: url });
+  if (status !== 200) return res.status(status).json(body);
+
+  return res.status(200).json({ ...body, imageUrl: url });
 }
 
 async function requestEmailChange(req, res) {

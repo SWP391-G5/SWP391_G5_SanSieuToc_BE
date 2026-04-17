@@ -118,7 +118,10 @@ async function registerCustomer(payload) {
     return { status: 400, body: { message: 'Username không hợp lệ.' } };
   }
   if (!isValidPassword(password)) {
-    return { status: 400, body: { message: 'Mật khẩu phải từ 6 đến 128 ký tự.' } };
+    return {
+      status: 400,
+      body: { message: 'Mật khẩu phải 6-128 ký tự và gồm chữ hoa, chữ thường, số, ký tự đặc biệt (không có khoảng trắng).' },
+    };
   }
 
   const normalizedEmail = normalizeEmail(email);
