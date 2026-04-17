@@ -97,7 +97,6 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
   const subject = 'San Sieu Toc - Tai khoan cua ban';
   const safeName = name || 'ban';
   const safeRole = role || 'nguoi dung';
-
   const text = [
     `Xin chao ${safeName},`,
     '',
@@ -107,12 +106,222 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
     '',
     'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
   ].join('\n');
+}
+
+async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Xac nhan dat san thanh cong';
+  const safeName = name || 'ban';
+  const { fieldName, date, time, total, bookingId } = bookingDetails;
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    'Đơn đặt sân của bạn đã được xác nhận thành công!',
+    '',
+    '--- Thong tin dat san ---',
+    `Ma dat san: ${bookingId}`,
+    `San: ${fieldName}`,
+    `Ngay: ${date}`,
+    `Gio: ${time}`,
+    `Tong tien: ${total} VND`,
+    '',
+    'Cam on ban da su dung dich vu San Sieu Toc!',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #6dff9e, #2ff801); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #0d6100; margin: 0;">San Sieu Toc</h1>
+        <p style="color: #0d6100; margin: 5px 0 0;">Dat san thanh cong!</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
+        <p>Xin chao <strong>${safeName}</strong>,</p>
+        <p>Đơn đặt sân của bạn đã được xác nhận thành công!</p>
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
+          <h3 style="margin: 0 0 10px; color: #333;">Thong tin dat san</h3>
+          <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
+          <p style="margin: 5px 0;"><strong>San:</strong> ${fieldName}</p>
+          <p style="margin: 5px 0;"><strong>Ngay:</strong> ${date}</p>
+          <p style="margin: 5px 0;"><strong>Gio:</strong> ${time}</p>
+          <p style="margin: 5px 0;"><strong>Tong tien:</strong> <span style="color: #6dff9e; font-weight: bold;">${total} VND</span></p>
+        </div>
+        <p style="color: #666; font-size: 14px;">Cam on ban da su dung dich vu San Sieu Toc!</p>
+      </div>
+    </div>
+  `;
 
   return getTransporter().sendMail({
     from: user,
     to,
     subject,
     text,
+    html,
+  });
+}
+
+async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Yeu cau huy dat san';
+  const safeName = name || 'ban';
+  const { fieldName, date, time, total, bookingId, status } = bookingDetails;
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    `Yêu cầu hủy đặt sân của bạn đã được tiến hành. Dưới đây là thông tin chi tiết về yêu cầu hủy:`,
+    '',
+    '--- Thong tin dat san ---',
+    `Ma dat san: ${bookingId}`,
+    `San: ${fieldName}`,
+    `Ngay: ${date}`,
+    `Gio: ${time}`,
+    `Tong tien: ${total} VND`,
+    `Trang thai: ${status}`,
+    '',
+    status === 'Đang chờ hoàn tiền'
+      ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
+      : 'Tien da duoc hoan vao wallet cua ban.',
+    '',
+    'Neu co thac mac, vui long lien he voi chung toi.',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #ffc864, #ff9632); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #fff; margin: 0;">San Sieu Toc</h1>
+        <p style="color: #fff; margin: 5px 0 0;">Yeu cau huy dat san</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
+        <p>Xin chao <strong>${safeName}</strong>,</p>
+        <p> Yêu cầu hủy đặt sân của bạn đã được tiến hành. Dưới đây là thông tin chi tiết về yêu cầu hủy:</p>
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc864;">
+          <h3 style="margin: 0 0 10px; color: #333;">Thong tin dat san</h3>
+          <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
+          <p style="margin: 5px 0;"><strong>San:</strong> ${fieldName}</p>
+          <p style="margin: 5px 0;"><strong>Ngay:</strong> ${date}</p>
+          <p style="margin: 5px 0;"><strong>Gio:</strong> ${time}</p>
+          <p style="margin: 5px 0;"><strong>Tong tien:</strong> ${total} VND</p>
+          <p style="margin: 5px 0;"><strong>Trang thai:</strong> <span style="color: #ff9632; font-weight: bold;">${status}</span></p>
+        </div>
+        <p style="color: #666; font-size: 14px;">
+          ${status === 'Đang chờ hoàn tiền'
+      ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
+      : 'Tien da duoc hoan vao wallet cua ban.'}
+        </p>
+        <p style="color: #666; font-size: 14px;">Neu co thac mac, vui long lien he voi chung toi.</p>
+      </div>
+    </div>
+  `;
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function sendWalletTopupEmail({ to, name, amount, balance, transactionId }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Nap tien wallet thanh cong';
+  const safeName = name || 'ban';
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    'Tài khoản wallet của bạn đã được nạp tiền thành công!',
+    '',
+    '--- Chi tiet giao dich ---',
+    `Ma giao dich: ${transactionId || 'N/A'}`,
+    `So tien nap: +${amount} VND`,
+    `So du hien tai: ${balance} VND`,
+    '',
+    'Ban co the su dung so du nay de dat san.',
+    '',
+    'Cam on ban da su dung dich vu San Sieu Toc!',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #6dff9e, #2ff801); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #0d6100; margin: 0;">San Sieu Toc</h1>
+        <p style="color: #0d6100; margin: 5px 0 0;">Nap tien wallet thanh cong!</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
+        <p>Xin chao <strong>${safeName}</strong>,</p>
+        <p>Tài khoản wallet của bạn đã được nạp tiền thành công!</p>
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
+          <h3 style="margin: 0 0 10px; color: #333;">Chi tiet giao dich</h3>
+          <p style="margin: 5px 0;"><strong>Ma giao dich:</strong> ${transactionId || 'N/A'}</p>
+          <p style="margin: 5px 0;"><strong>So tien nap:</strong> <span style="color: #6dff9e; font-weight: bold;">+${amount} VND</span></p>
+          <p style="margin: 5px 0;"><strong>So du hien tai:</strong> <span style="font-weight: bold;">${balance} VND</span></p>
+        </div>
+        <p style="color: #666; font-size: 14px;">Ban co the su dung so du nay de dat san.</p>
+        <p style="color: #666; font-size: 14px;">Cam on ban da su dung dich vu San Sieu Toc!</p>
+      </div>
+    </div>
+  `;
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function sendWalletRefundEmail({ to, name, amount, balance, bookingId, reason }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Hoan tien wallet thanh cong';
+  const safeName = name || 'ban';
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    'Tien hoan tu huy dat san da duoc chuyen vao wallet cua ban!',
+    '',
+    '--- Chi tiet hoan tien ---',
+    `Ma dat san: ${bookingId}`,
+    `Ly do: ${reason || 'Huy dat san'}`,
+    `So tien hoan: +${amount} VND`,
+    `So du hien tai: ${balance} VND`,
+    '',
+    'Ban co the su dung so du nay de dat san khac.',
+    '',
+    'Cam on ban da su dung dich vu San Sieu Toc!',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #6dff9e, #2ff801); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #0d6100; margin: 0;">San Sieu Toc</h1>
+        <p style="color: #0d6100; margin: 5px 0 0;">Hoan tien thanh cong!</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
+        <p>Xin chao <strong>${safeName}</strong>,</p>
+        <p>Tien hoan tu huy dat san da duoc chuyen vao wallet cua ban!</p>
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
+          <h3 style="margin: 0 0 10px; color: #333;">Chi tiet hoan tien</h3>
+          <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
+          <p style="margin: 5px 0;"><strong>Ly do:</strong> ${reason || 'Huy dat san'}</p>
+          <p style="margin: 5px 0;"><strong>So tien hoan:</strong> <span style="color: #6dff9e; font-weight: bold;">+${amount} VND</span></p>
+          <p style="margin: 5px 0;"><strong>So du hien tai:</strong> <span style="font-weight: bold;">${balance} VND</span></p>
+        </div>
+        <p style="color: #666; font-size: 14px;">Ban co the su dung so du nay de dat san khac.</p>
+        <p style="color: #666; font-size: 14px;">Cam on ban da su dung dich vu San Sieu Toc!</p>
+      </div>
+    </div>
+  `;
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+    html,
   });
 }
 
@@ -122,4 +331,8 @@ module.exports = {
   sendNewPasswordEmail,
   sendAccountCredentialsEmail,
   sendVerificationCodeEmail,
+  sendBookingConfirmationEmail,
+  sendBookingCancellationEmail,
+  sendWalletTopupEmail,
+  sendWalletRefundEmail,
 };
