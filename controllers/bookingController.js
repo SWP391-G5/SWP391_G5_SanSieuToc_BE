@@ -41,7 +41,7 @@ async function deductWalletBalance(userId, amount, bookingId) {
     bookingID: bookingId,
     fromWalletID: wallet._id,
     toWalletID: null,
-    type: 'Booking Payment',
+    type: 'Field Payment',
     amount: amount,
     balanceBefore,
     balanceAfter: wallet.balance,
