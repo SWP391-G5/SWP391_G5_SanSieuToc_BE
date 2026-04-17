@@ -92,9 +92,34 @@ async function sendVerificationCodeEmail({ to, name, code }) {
   });
 }
 
+async function sendAccountCredentialsEmail({ to, name, username, password, role }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Tai khoan cua ban';
+  const safeName = name || 'ban';
+  const safeRole = role || 'nguoi dung';
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    `He thong da tao tai khoan ${safeRole} cho ban:`,
+    `Username: ${username}`,
+    `Password: ${password}`,
+    '',
+    'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
+  ].join('\n');
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+  });
+}
+
 module.exports = {
   isEmailConfigured,
   createTransporter,
   sendNewPasswordEmail,
+  sendAccountCredentialsEmail,
   sendVerificationCodeEmail,
 };

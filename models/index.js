@@ -12,6 +12,7 @@ const Feedback = require('./Feedback');
 const MarketingResource = require('./MarketingResource');
 const Post = require('./Post');
 const Voucher = require('./Voucher');
+const Report = require('./Report');
 const Privacy = require('./Privacy');
 
 module.exports = {
@@ -29,5 +30,6 @@ module.exports = {
   MarketingResource,
   Post,
   Voucher,
+  Report,
   Privacy,
 };
