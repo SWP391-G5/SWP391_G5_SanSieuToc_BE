@@ -6,6 +6,7 @@ const userProfileRoutes = require('./user/profile');
 const walletRoutes = require('./wallet');
 const fieldsRoutes = require('./fields');
 const bookingRoutes = require('./bookings');
+const serviceRoutes = require('./services');
 
 const managerRoutes = require('./manager');
 const ownerRoutes = require('./owner');
@@ -19,6 +20,7 @@ router.use('/api/user', userProfileRoutes);
 router.use('/api/wallets', walletRoutes);
 router.use('/api/fields', fieldsRoutes);
 router.use('/api/bookings', bookingRoutes);
+router.use('/api/services', serviceRoutes);
 
 router.use('/api/manager', managerRoutes);
 router.use('/api/owner', ownerRoutes);

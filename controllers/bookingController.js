@@ -46,6 +46,7 @@ async function deductWalletBalance(userId, amount, bookingId) {
     balanceBefore,
     balanceAfter: wallet.balance,
     description: 'Booking payment',
+    bookingType: 'field',
   });
 
   return wallet;
@@ -131,8 +132,7 @@ async function getMyBookings(req, res) {
         allDates,
         grandTotal: b.totalPrice,
         fieldTotal: b.fieldTotal || 0,
-        servicesTotal: b.servicesTotal || 0,
-        services: b.services || [],
+
         status: statusMap[b.status] || b.status,
         statusPayment: paymentStatusMap[b.statusPayment] || b.statusPayment,
         createdAt: b.createdAt,
@@ -202,24 +202,13 @@ async function createBooking(req, res) {
     }
 
     const totalPrice = grandTotal || req.body.grandTotal || slotDetails.length * pricePerSlot;
-    const fieldTotal = req.body.fieldTotal || slotDetails.length * pricePerSlot;
-    const servicesTotal = req.body.servicesTotal || 0;
     const paymentMethod = req.body.paymentMethod || 'wallet';
-
-    const services = Array.isArray(req.body.services) ? req.body.services.map(s => ({
-      serviceId: s.id || s.serviceId || s,
-      serviceName: s.name || s.serviceName || '',
-      price: s.price || 0,
-    })) : [];
 
     console.log('Creating booking with totalPrice:', totalPrice);
 
     const booking = new Booking({
       customerID: userId,
       totalPrice,
-      fieldTotal,
-      servicesTotal,
-      services,
       statusPayment: 'Pending',
       status: 'Booked',
     });

@@ -36,6 +36,7 @@ exports.getMyTransactions = asyncHandler(async (req, res) => {
         description: t.description,
         externalTransactionID: t.externalTransactionID,
         bookingID: t.bookingID,
+        bookingType: t.bookingType,
         createdAt: t.createdAt,
         isCredit: t.toWalletID?.toString() === wallet._id.toString(),
         isDebit: t.fromWalletID?.toString() === wallet._id.toString()

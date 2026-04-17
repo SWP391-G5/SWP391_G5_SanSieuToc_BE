@@ -25,6 +25,11 @@ const TransactionSchema = new mongoose.Schema(
     balanceBefore: { type: Number, default: 0 },
     balanceAfter: { type: Number, default: 0 },
     description: { type: String, default: '', trim: true, maxlength: 1000 },
+    bookingType: {
+      type: String,
+      enum: ['field', 'service'],
+      default: 'field',
+    },
   },
   { timestamps: true }
 );
