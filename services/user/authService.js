@@ -7,6 +7,7 @@ const { generateNumericCode, hashOtpCode, verifyOtpCode } = require('../../utils
 const {
   isNonEmptyString,
   isValidEmail,
+  isValidName,
   isValidPassword,
   isValidUsername,
   normalizeEmail,
@@ -25,6 +26,7 @@ function normalizeAccount(accountDoc) {
     username: accountDoc.username,
     email: accountDoc.email,
     name: accountDoc.name,
+    image: accountDoc.image || '',
     role: accountDoc.roleID?.name,
     accountType: 'user',
   };
@@ -58,21 +60,41 @@ async function login(payload) {
     return { status: 403, body: { message: 'Tài khoản đã bị khóa.' } };
   }
 
-  if (account.status !== 'Active') {
-    if (!account.emailVerified) {
-      return {
-        status: 403,
-        body: { message: 'Tài khoản chưa được xác thực email.', email: account.email },
-      };
-    }
-    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
-  }
-
   if (!account.emailVerified) {
+    if (!isEmailConfigured()) {
+      return { status: 500, body: { message: 'Chức năng gửi email chưa được cấu hình.' } };
+    }
+
+    const now = Date.now();
+    const resendAt = account.emailVerification?.resendAvailableAt;
+    if (!resendAt || resendAt.getTime() <= now) {
+      const verificationCode = generateNumericCode(6);
+      const verificationCodeHash = hashOtpCode(verificationCode);
+      const expiresAt = new Date(now + 5 * 60 * 1000);
+      const resendAvailableAt = new Date(now + 60 * 1000);
+
+      account.emailVerification = {
+        codeHash: verificationCodeHash,
+        expiresAt,
+        resendAvailableAt,
+      };
+      await account.save();
+
+      try {
+        await sendVerificationCodeEmail({ to: account.email, name: account.name, code: verificationCode });
+      } catch (e) {
+        return { status: 500, body: { message: 'Gửi mã xác thực thất bại. Vui lòng thử lại sau.' } };
+      }
+    }
+
     return {
       status: 403,
       body: { message: 'Tài khoản chưa được xác thực email.', email: account.email },
     };
+  }
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
   }
 
   const roleName = account.roleID?.name;
@@ -106,6 +128,9 @@ async function registerCustomer(payload) {
     };
   }
 
+  if (!isValidName(name)) {
+    return { status: 400, body: { message: 'Họ tên không hợp lệ.' } };
+  }
   if (!isValidEmail(email)) {
     return { status: 400, body: { message: 'Email không hợp lệ.' } };
   }
@@ -113,7 +138,10 @@ async function registerCustomer(payload) {
     return { status: 400, body: { message: 'Username không hợp lệ.' } };
   }
   if (!isValidPassword(password)) {
-    return { status: 400, body: { message: 'Mật khẩu phải có ít nhất 6 ký tự.' } };
+    return {
+      status: 400,
+      body: { message: 'Mật khẩu phải 6-128 ký tự và gồm chữ hoa, chữ thường, số, ký tự đặc biệt (không có khoảng trắng).' },
+    };
   }
 
   const normalizedEmail = normalizeEmail(email);

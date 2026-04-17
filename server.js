@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const errorHandler = require('./middlewares/errorHandler');
 const app = express();
 
 // ============================================
@@ -31,16 +32,19 @@ mongoose.connect(process.env.MONGO_URI)
 // Load all models
 require('./models');
 
-  const routes = require('./routes')
-  app.use(routes);
+const routes = require('./routes');
+app.use(routes);
 
-app.get('/', async(req, res)=>{
+app.get('/', async (req, res) => {
     try {
         res.send({message: 'Welcome to San Sieu Toc API!'});
     } catch (error) {
         res.send({error: error.message});
     }
 });
+
+// Global error handler (JSON)
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 9999;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

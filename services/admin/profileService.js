@@ -1,5 +1,4 @@
-const UserAccount = require('../../models/UserAccount');
-const Wallet = require('../../models/Wallet');
+const AdminAccount = require('../../models/AdminAccount');
 const { verifyPassword, hashPassword } = require('../../utils/password');
 const { generateNumericCode, hashOtpCode, verifyOtpCode } = require('../../utils/otp');
 const { isEmailConfigured, sendVerificationCodeEmail } = require('../../utils/mailer');
@@ -15,7 +14,7 @@ const {
   normalizePhone,
 } = require('../../utils/validators');
 
-function normalizeUserProfile(accountDoc) {
+function normalizeAdminProfile(accountDoc) {
   return {
     id: accountDoc._id,
     username: accountDoc.username,
@@ -25,42 +24,32 @@ function normalizeUserProfile(accountDoc) {
     address: accountDoc.address || '',
     image: accountDoc.image || '',
     role: accountDoc.roleID?.name,
-    accountType: 'user',
+    accountType: 'admin',
   };
 }
 
-async function getProfile(userId) {
-  if (!userId) return { status: 401, body: { message: 'Unauthorized' } };
+async function getProfile(adminId) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
 
-  const account = await UserAccount.findById(userId).populate('roleID');
+  const account = await AdminAccount.findById(adminId).populate('roleID');
   if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
 
-  let wallet = await Wallet.findOne({
-    walletOwnerId: account._id,
-    $or: [{ walletOwnerModel: 'UserAccount' }, { walletOwnerModel: { $exists: false } }],
-  });
-
-  if (!wallet) {
-    wallet = await Wallet.create({ walletOwnerModel: 'UserAccount', walletOwnerId: account._id, balance: 0 });
-  } else if (!wallet.walletOwnerModel) {
-    wallet.walletOwnerModel = 'UserAccount';
-    await wallet.save();
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
   }
 
-  return {
-    status: 200,
-    body: {
-      user: normalizeUserProfile(account),
-      wallet: { id: wallet._id, balance: wallet.balance },
-    },
-  };
+  return { status: 200, body: { user: normalizeAdminProfile(account) } };
 }
 
-async function updateProfile(userId, payload) {
-  if (!userId) return { status: 401, body: { message: 'Unauthorized' } };
+async function updateProfile(adminId, payload) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
 
-  const account = await UserAccount.findById(userId).populate('roleID');
+  const account = await AdminAccount.findById(adminId).populate('roleID');
   if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
+  }
 
   const { username, email, name, phone, address, image } = payload || {};
 
@@ -105,11 +94,11 @@ async function updateProfile(userId, payload) {
 
   await account.save();
 
-  return { status: 200, body: { user: normalizeUserProfile(account) } };
+  return { status: 200, body: { user: normalizeAdminProfile(account) } };
 }
 
-async function changePassword(userId, payload) {
-  if (!userId) return { status: 401, body: { message: 'Unauthorized' } };
+async function changePassword(adminId, payload) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
 
   const { currentPassword, newPassword } = payload || {};
 
@@ -126,8 +115,12 @@ async function changePassword(userId, payload) {
     };
   }
 
-  const account = await UserAccount.findById(userId);
+  const account = await AdminAccount.findById(adminId);
   if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
+  }
 
   const ok = await verifyPassword(String(currentPassword), account.password);
   if (!ok) return { status: 401, body: { message: 'Mật khẩu hiện tại không đúng.' } };
@@ -141,8 +134,8 @@ async function changePassword(userId, payload) {
   return { status: 200, body: { message: 'Đổi mật khẩu thành công.' } };
 }
 
-async function requestEmailChange(userId, payload) {
-  if (!userId) return { status: 401, body: { message: 'Unauthorized' } };
+async function requestEmailChange(adminId, payload) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
 
   const { newEmail } = payload || {};
 
@@ -154,8 +147,17 @@ async function requestEmailChange(userId, payload) {
     return { status: 500, body: { message: 'Chức năng gửi email chưa được cấu hình.' } };
   }
 
-  const account = await UserAccount.findById(userId);
+  const account = await AdminAccount.findById(adminId).populate('roleID');
   if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
+  }
+
+  const roleName = String(account.roleID?.name || '').trim().toLowerCase();
+  if (roleName !== 'manager') {
+    return { status: 403, body: { message: 'Bạn không có quyền thực hiện.' } };
+  }
 
   const normalizedNewEmail = normalizeEmail(newEmail);
   const currentEmail = normalizeEmail(account.email);
@@ -164,7 +166,7 @@ async function requestEmailChange(userId, payload) {
     return { status: 400, body: { message: 'Email mới phải khác email hiện tại.' } };
   }
 
-  const existing = await UserAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
+  const existing = await AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
   if (existing) {
     return { status: 409, body: { message: 'Email đã tồn tại.' } };
   }
@@ -205,8 +207,8 @@ async function requestEmailChange(userId, payload) {
   };
 }
 
-async function verifyEmailChange(userId, payload) {
-  if (!userId) return { status: 401, body: { message: 'Unauthorized' } };
+async function verifyEmailChange(adminId, payload) {
+  if (!adminId) return { status: 401, body: { message: 'Unauthorized' } };
 
   const { newEmail, code } = payload || {};
 
@@ -214,8 +216,17 @@ async function verifyEmailChange(userId, payload) {
     return { status: 400, body: { message: 'Vui lòng nhập email mới và mã xác thực.' } };
   }
 
-  const account = await UserAccount.findById(userId).populate('roleID');
+  const account = await AdminAccount.findById(adminId).populate('roleID');
   if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản.' } };
+
+  if (account.status !== 'Active') {
+    return { status: 403, body: { message: 'Tài khoản đã bị vô hiệu hóa.' } };
+  }
+
+  const roleName = String(account.roleID?.name || '').trim().toLowerCase();
+  if (roleName !== 'manager') {
+    return { status: 403, body: { message: 'Bạn không có quyền thực hiện.' } };
+  }
 
   const normalizedNewEmail = normalizeEmail(newEmail);
   const pending = account.emailChange || {};
@@ -233,19 +244,18 @@ async function verifyEmailChange(userId, payload) {
     return { status: 400, body: { message: 'Mã xác thực không đúng hoặc đã hết hạn.' } };
   }
 
-  const exists = await UserAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
+  const exists = await AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
   if (exists) {
     return { status: 409, body: { message: 'Email đã tồn tại.' } };
   }
 
   account.email = normalizedNewEmail;
-  account.emailVerified = true;
   account.emailChange = { newEmail: '', codeHash: '', expiresAt: undefined, resendAvailableAt: undefined };
   await account.save();
 
   return {
     status: 200,
-    body: { message: 'Đổi email thành công.', user: normalizeUserProfile(account) },
+    body: { message: 'Đổi email thành công.', user: normalizeAdminProfile(account) },
   };
 }
 

@@ -19,7 +19,7 @@ const TransactionSchema = new mongoose.Schema(
     externalTransactionID: { type: String, default: '', trim: true, maxlength: 200 },
     type: {
       type: String,
-      enum: ['Booking Payment', 'Add Credit', 'Commission Transaction', 'Refund'],
+      enum: ['Field Payment', 'Add Credit', 'Commission Transaction', 'Refund', 'Service Payment'],
       required: true,
     },
     amount: { type: Number, required: true },

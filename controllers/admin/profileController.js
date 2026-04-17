@@ -1,4 +1,4 @@
-const profileService = require('../../services/user/profileService');
+const profileService = require('../../services/admin/profileService');
 const { uploadImageBuffer } = require('../../utils/cloudinary/uploadImageBuffer');
 
 async function getProfile(req, res) {
@@ -24,10 +24,7 @@ async function uploadAvatar(req, res) {
     return res.status(400).json({ message: 'Vui lòng chọn file ảnh.' });
   }
 
-  const roleKey = String(req.user?.role || '').trim().toLowerCase();
-  const folder = roleKey === 'owner' ? 'avatars/owners' : 'avatars/customers';
-
-  const { url } = await uploadImageBuffer(file.buffer, { folder });
+  const { url } = await uploadImageBuffer(file.buffer, { folder: 'avatars/admins' });
 
   const { status, body } = await profileService.updateProfile(req.user?.sub, { image: url });
   if (status !== 200) return res.status(status).json(body);
