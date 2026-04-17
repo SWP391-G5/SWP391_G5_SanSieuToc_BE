@@ -9,6 +9,7 @@ const FieldSchema = new mongoose.Schema(
     },
     fieldType: { type: String, required: true, trim: true, maxlength: 100 },
     fieldName: { type: String, required: true, trim: true, maxlength: 200 },
+    price: { type: Number, default: 0, min: 0 },
     address: { type: String, default: '', trim: true, maxlength: 500 },
     description: { type: String, default: '', trim: true, maxlength: 2000 },
     city: { type: String, default: '', trim: true, maxlength: 100 },

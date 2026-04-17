@@ -3,9 +3,16 @@ const mongoose = require('mongoose');
 const BookingDetailSchema = new mongoose.Schema(
   {
     fieldID: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Field',
+      type: mongoose.Schema.Types.Mixed,
       required: true,
+    },
+    fieldName: {
+      type: String,
+      default: '',
+    },
+    fieldImage: {
+      type: String,
+      default: '',
     },
     bookingID: {
       type: mongoose.Schema.Types.ObjectId,
@@ -17,7 +24,7 @@ const BookingDetailSchema = new mongoose.Schema(
     priceSnapShot: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
-      enum: ['Active', 'End', 'Not Arrive', 'Cancel'],
+      enum: ['Active', 'End', 'Not Arrive', 'Cancel Request', 'Cancel'],
       default: 'Active',
     },
   },

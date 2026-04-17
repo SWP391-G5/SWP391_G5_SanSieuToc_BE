@@ -4,7 +4,10 @@
   "description": "sansieutocbe",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js"
+
+
+    "start": "nodemon server",
+    "test": "jest"
   },
   "keywords": [
     "nodejs",

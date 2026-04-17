@@ -10,13 +10,17 @@ const BookingSchema = new mongoose.Schema(
     totalPrice: { type: Number, default: 0, min: 0 },
     statusPayment: {
       type: String,
-      enum: ['Pending', 'Completed', 'Cancel'],
+      enum: ['Pending', 'Completed', 'Pending Refund', 'Refunded', 'Cancel'],
       default: 'Pending',
     },
     status: {
       type: String,
-      enum: ['Booked', 'Cancel'],
+      enum: ['Booked', 'Cancel Request', 'Cancel'],
       default: 'Booked',
+    },
+    refundReason: {
+      type: String,
+      default: '',
     },
   },
   { timestamps: true }

@@ -4,7 +4,7 @@ const multer = require('multer');
 const asyncHandler = require('../../middlewares/asyncHandler');
 const authenticate = require('../../middlewares/authenticate');
 const authorizeRoles = require('../../middlewares/authorize');
-const profileController = require('../../controllers/user/profileController');
+const profileController = require('../../controllers/admin/profileController');
 
 const router = express.Router();
 
@@ -37,7 +37,7 @@ function uploadSingleImage(fieldName) {
 }
 
 router.use(authenticate);
-router.use(authorizeRoles(['Owner', 'Customer']));
+router.use(authorizeRoles(['Admin', 'Manager']));
 
 router.get('/profile', asyncHandler(profileController.getProfile));
 router.put('/profile', asyncHandler(profileController.updateProfile));
@@ -45,7 +45,8 @@ router.put('/profile/password', asyncHandler(profileController.changePassword));
 
 router.post('/profile/avatar', uploadSingleImage('image'), asyncHandler(profileController.uploadAvatar));
 
-router.post('/profile/email/request', asyncHandler(profileController.requestEmailChange));
-router.post('/profile/email/verify', asyncHandler(profileController.verifyEmailChange));
+// Managers must verify email change
+router.post('/profile/email/request', authorizeRoles(['Manager']), asyncHandler(profileController.requestEmailChange));
+router.post('/profile/email/verify', authorizeRoles(['Manager']), asyncHandler(profileController.verifyEmailChange));
 
 module.exports = router;

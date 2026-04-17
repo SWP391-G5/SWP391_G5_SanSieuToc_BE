@@ -54,8 +54,29 @@ const AdminAccountSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Active', 'InActive'],
+      enum: ['Active', 'InActive', 'Deleted'],
       default: 'Active',
+    },
+
+    // Backward-compatible: existing admin accounts are considered verified.
+    // New accounts created by Admin for Manager will set this to false.
+    emailVerified: {
+      type: Boolean,
+      default: true,
+    },
+
+    emailVerification: {
+      codeHash: { type: String, default: '' },
+      expiresAt: { type: Date },
+      resendAvailableAt: { type: Date },
+    },
+
+    // Used for "change email" flow (OTP to new email)
+    emailChange: {
+      newEmail: { type: String, default: '', trim: true, lowercase: true, maxlength: 254 },
+      codeHash: { type: String, default: '' },
+      expiresAt: { type: Date },
+      resendAvailableAt: { type: Date },
     },
   },
   { timestamps: true }
