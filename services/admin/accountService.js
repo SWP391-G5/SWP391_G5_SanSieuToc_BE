@@ -134,7 +134,8 @@ async function createManager(payload) {
     address,
     password: passwordHash,
     roleID: roleId,
-    status: 'Active',
+    status: 'InActive',
+    emailVerified: false,
   });
 
   try {
@@ -163,6 +164,23 @@ async function deactivateManager(id) {
   await account.save();
 
   return { status: 200, body: { message: 'Đã vô hiệu hóa tài khoản.', item: normalizeAdminAccount(account) } };
+}
+
+async function deleteManager(id) {
+  if (!mongoose.isValidObjectId(id)) return { status: 400, body: { message: 'ID không hợp lệ.' } };
+  const roleId = await getRoleIdByName('Manager');
+
+  const account = await AdminAccount.findOne({ _id: id, roleID: roleId }).populate('roleID');
+  if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản Manager.' } };
+
+  if (account.status === 'Deleted') {
+    return { status: 200, body: { message: 'Tài khoản đã bị xóa.', item: normalizeAdminAccount(account) } };
+  }
+
+  account.status = 'Deleted';
+  await account.save();
+
+  return { status: 200, body: { message: 'Đã xóa tài khoản (soft delete).', item: normalizeAdminAccount(account) } };
 }
 
 async function listOwners() {
@@ -198,8 +216,8 @@ async function createOwner(payload) {
     address,
     password: passwordHash,
     roleID: roleId,
-    status: 'Active',
-    emailVerified: true,
+    status: 'InActive',
+    emailVerified: false,
   });
 
   try {
@@ -253,6 +271,7 @@ module.exports = {
   listManagers,
   createManager,
   deactivateManager,
+  deleteManager,
   listOwners,
   createOwner,
   deactivateOwner,

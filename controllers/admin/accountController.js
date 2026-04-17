@@ -15,6 +15,11 @@ async function deactivateManager(req, res) {
   return res.status(status).json(body);
 }
 
+async function deleteManager(req, res) {
+  const { status, body } = await accountService.deleteManager(req.params?.id);
+  return res.status(status).json(body);
+}
+
 async function listOwners(req, res) {
   const { status, body } = await accountService.listOwners();
   return res.status(status).json(body);
@@ -44,6 +49,7 @@ module.exports = {
   listManagers,
   createManager,
   deactivateManager,
+  deleteManager,
   listOwners,
   createOwner,
   deactivateOwner,

@@ -14,6 +14,7 @@ router.use(authorizeRoles(['Admin']));
 router.get('/accounts/managers', asyncHandler(accountController.listManagers));
 router.post('/accounts/managers', asyncHandler(accountController.createManager));
 router.patch('/accounts/managers/:id/deactivate', asyncHandler(accountController.deactivateManager));
+router.patch('/accounts/managers/:id/delete', asyncHandler(accountController.deleteManager));
 
 // Owner accounts (UserAccount + Role=Owner)
 router.get('/accounts/owners', asyncHandler(accountController.listOwners));
