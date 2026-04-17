@@ -325,7 +325,7 @@ async function cancelBooking(req, res) {
             time: timeStr,
             total: formatVnd(booking.totalPrice),
             bookingId: booking._id.toString(),
-            status: 'Dang cho hoan tien',
+            status: 'Đang chờ hoàn tiền',
           },
         });
         console.log('Cancellation email sent to:', user.email);

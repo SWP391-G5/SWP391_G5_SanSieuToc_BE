@@ -8,6 +8,45 @@ function formatVnd(amount) {
     return new Intl.NumberFormat('vi-VN').format(amount || 0);
 }
 
+// Get user's transaction history
+exports.getMyTransactions = asyncHandler(async (req, res) => {
+    const userId = req.user.sub || req.user.id || req.user._id;
+
+    const wallet = await Wallet.findOne({ walletOwnerId: userId, walletOwnerModel: 'UserAccount' });
+
+    if (!wallet) {
+        return res.json({ transactions: [], walletBalance: 0 });
+    }
+
+    const transactions = await Transaction.find({
+        $or: [
+            { toWalletID: wallet._id },
+            { fromWalletID: wallet._id }
+        ]
+    })
+    .sort({ createdAt: -1 })
+    .lean();
+
+    const formattedTransactions = transactions.map(t => ({
+        id: t._id,
+        type: t.type,
+        amount: t.amount,
+        balanceBefore: t.balanceBefore,
+        balanceAfter: t.balanceAfter,
+        description: t.description,
+        externalTransactionID: t.externalTransactionID,
+        bookingID: t.bookingID,
+        createdAt: t.createdAt,
+        isCredit: t.toWalletID?.toString() === wallet._id.toString(),
+        isDebit: t.fromWalletID?.toString() === wallet._id.toString()
+    }));
+
+    res.json({
+        transactions: formattedTransactions,
+        walletBalance: wallet.balance
+    });
+});
+
 // Top up wallet
 exports.topUpWallet = asyncHandler(async (req, res) => {
     const { amount, transactionID } = req.body;

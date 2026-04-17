@@ -101,7 +101,7 @@ async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
   const text = [
     `Xin chao ${safeName},`,
     '',
-    'Dat san cua ban da duoc xac nhan thanh cong!',
+    'Đơn đặt sân của bạn đã được xác nhận thành công!',
     '',
     '--- Thong tin dat san ---',
     `Ma dat san: ${bookingId}`,
@@ -121,7 +121,7 @@ async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
         <p>Xin chao <strong>${safeName}</strong>,</p>
-        <p>Dat san cua ban da duoc xac nhan thanh cong!</p>
+        <p>Đơn đặt sân của bạn đã được xác nhận thành công!</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
           <h3 style="margin: 0 0 10px; color: #333;">Thong tin dat san</h3>
           <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
@@ -153,7 +153,7 @@ async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
   const text = [
     `Xin chao ${safeName},`,
     '',
-    `Yeu cau huy dat san cua ban da duoc tien hanh.`,
+    `Yêu cầu hủy đặt sân của bạn đã được tiến hành. Dưới đây là thông tin chi tiết về yêu cầu hủy:`,
     '',
     '--- Thong tin dat san ---',
     `Ma dat san: ${bookingId}`,
@@ -163,7 +163,7 @@ async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
     `Tong tien: ${total} VND`,
     `Trang thai: ${status}`,
     '',
-    status === 'Dang cho hoan tien'
+    status === 'Đang chờ hoàn tiền'
       ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
       : 'Tien da duoc hoan vao wallet cua ban.',
     '',
@@ -178,7 +178,7 @@ async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
         <p>Xin chao <strong>${safeName}</strong>,</p>
-        <p>Yeu cau huy dat san cua ban da duoc tien hanh.</p>
+        <p> Yêu cầu hủy đặt sân của bạn đã được tiến hành. Dưới đây là thông tin chi tiết về yêu cầu hủy:</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc864;">
           <h3 style="margin: 0 0 10px; color: #333;">Thong tin dat san</h3>
           <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
@@ -189,7 +189,7 @@ async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
           <p style="margin: 5px 0;"><strong>Trang thai:</strong> <span style="color: #ff9632; font-weight: bold;">${status}</span></p>
         </div>
         <p style="color: #666; font-size: 14px;">
-          ${status === 'Dang cho hoan tien'
+          ${status === 'Đang chờ hoàn tiền'
             ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
             : 'Tien da duoc hoan vao wallet cua ban.'}
         </p>
@@ -215,7 +215,7 @@ async function sendWalletTopupEmail({ to, name, amount, balance, transactionId }
   const text = [
     `Xin chao ${safeName},`,
     '',
-    'Tai khoan wallet cua ban da duoc nap tien thanh cong!',
+    'Tài khoản wallet của bạn đã được nạp tiền thành công!',
     '',
     '--- Chi tiet giao dich ---',
     `Ma giao dich: ${transactionId || 'N/A'}`,
@@ -235,7 +235,7 @@ async function sendWalletTopupEmail({ to, name, amount, balance, transactionId }
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
         <p>Xin chao <strong>${safeName}</strong>,</p>
-        <p>Tai khoan wallet cua ban da duoc nap tien thanh cong!</p>
+        <p>Tài khoản wallet của bạn đã được nạp tiền thành công!</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
           <h3 style="margin: 0 0 10px; color: #333;">Chi tiet giao dich</h3>
           <p style="margin: 5px 0;"><strong>Ma giao dich:</strong> ${transactionId || 'N/A'}</p>
