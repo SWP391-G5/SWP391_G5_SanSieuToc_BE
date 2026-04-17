@@ -1,4 +1,5 @@
 const UserAccount = require('../../models/UserAccount');
+const AdminAccount = require('../../models/AdminAccount');
 const Role = require('../../models/Role');
 const { verifyPassword, hashPassword, generateRandomPassword } = require('../../utils/password');
 const { signAccessToken } = require('../../utils/jwt');
@@ -147,11 +148,14 @@ async function registerCustomer(payload) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedUsername = normalizeUsername(username);
 
-  const existing = await UserAccount.findOne({
-    $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
-  });
+  const [existingUser, existingAdminByEmail] = await Promise.all([
+    UserAccount.findOne({
+      $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
+    }),
+    AdminAccount.findOne({ email: normalizedEmail }),
+  ]);
 
-  if (existing) {
+  if (existingUser || existingAdminByEmail) {
     return { status: 409, body: { message: 'Email hoặc username đã tồn tại.' } };
   }
 

@@ -117,8 +117,12 @@ async function createManager(payload) {
 
   const { username, email, name, phone, address } = valid.value;
 
-  const existing = await AdminAccount.findOne({ $or: [{ email }, { username }] });
-  if (existing) {
+  const [existingAdmin, existingUserByEmail] = await Promise.all([
+    AdminAccount.findOne({ $or: [{ email }, { username }] }),
+    UserAccount.findOne({ email }),
+  ]);
+
+  if (existingAdmin || existingUserByEmail) {
     return { status: 409, body: { message: 'Email hoặc username đã tồn tại.' } };
   }
 
@@ -199,8 +203,12 @@ async function createOwner(payload) {
 
   const { username, email, name, phone, address } = valid.value;
 
-  const existing = await UserAccount.findOne({ $or: [{ email }, { username }] });
-  if (existing) {
+  const [existingUser, existingAdminByEmail] = await Promise.all([
+    UserAccount.findOne({ $or: [{ email }, { username }] }),
+    AdminAccount.findOne({ email }),
+  ]);
+
+  if (existingUser || existingAdminByEmail) {
     return { status: 409, body: { message: 'Email hoặc username đã tồn tại.' } };
   }
 
