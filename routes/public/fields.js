@@ -89,6 +89,17 @@ function computeSizeTone(sizeKey) {
   return String(sizeKey) === '7' ? 'tertiary' : 'primary';
 }
 
+function getEffectiveHourlyPrice(doc) {
+  const hourly = Number(doc?.hourlyPrice);
+  if (Number.isFinite(hourly) && hourly > 0) return hourly;
+
+  // Backward-compatible fallback for legacy data shape.
+  const legacyPrice = Number(doc?.price);
+  if (Number.isFinite(legacyPrice) && legacyPrice > 0) return legacyPrice;
+
+  return 0;
+}
+
 function toFieldDto(doc, ratingMap) {
   const id = String(doc?._id || '');
   const city = inferCity(doc);
@@ -99,7 +110,7 @@ function toFieldDto(doc, ratingMap) {
   const rating = ratingNumber.toFixed(1);
 
   const imageUrl = Array.isArray(doc?.image) && doc.image.length ? doc.image[0] : '';
-  const hourlyPrice = Number(doc?.hourlyPrice) || 0;
+  const hourlyPrice = getEffectiveHourlyPrice(doc);
 
   return {
     id,
@@ -110,6 +121,7 @@ function toFieldDto(doc, ratingMap) {
     size: `${sizeKey}-A-SIDE`,
     sizeKey,
     sizeTone: computeSizeTone(sizeKey),
+    hourlyPrice,
     price: hourlyPrice > 0 ? formatVnd(hourlyPrice) : 'Liên hệ',
     utilities: normalizeUtilities(doc?.utilities),
     image: imageUrl,
@@ -178,13 +190,17 @@ router.get(
       filter.$or = [{ fieldName: rx }, { address: rx }];
     }
 
-    if (Number.isFinite(priceMin) || Number.isFinite(priceMax)) {
-      filter.hourlyPrice = {};
-      if (Number.isFinite(priceMin)) filter.hourlyPrice.$gte = priceMin;
-      if (Number.isFinite(priceMax)) filter.hourlyPrice.$lte = priceMax;
-    }
-
     let docs = await Field.find(filter).sort({ createdAt: -1 }).lean();
+
+    // Price filter supports both `hourlyPrice` and legacy `price` schema.
+    if (Number.isFinite(priceMin) || Number.isFinite(priceMax)) {
+      docs = docs.filter((d) => {
+        const p = getEffectiveHourlyPrice(d);
+        if (Number.isFinite(priceMin) && p < priceMin) return false;
+        if (Number.isFinite(priceMax) && p > priceMax) return false;
+        return true;
+      });
+    }
 
     // In-memory filters for robust matching (city/sizeKey/utilities) regardless of how DB stores them.
     if (city) {
@@ -208,9 +224,9 @@ router.get(
 
     // Sorting
     if (sortBy === 'priceAsc') {
-      items.sort((a, b) => (Number(a?.price?.replace(/[^\d]/g, '')) || 0) - (Number(b?.price?.replace(/[^\d]/g, '')) || 0));
+      items.sort((a, b) => (Number(a?.hourlyPrice) || 0) - (Number(b?.hourlyPrice) || 0));
     } else if (sortBy === 'priceDesc') {
-      items.sort((a, b) => (Number(b?.price?.replace(/[^\d]/g, '')) || 0) - (Number(a?.price?.replace(/[^\d]/g, '')) || 0));
+      items.sort((a, b) => (Number(b?.hourlyPrice) || 0) - (Number(a?.hourlyPrice) || 0));
     } else if (sortBy === 'topRated') {
       items.sort((a, b) => {
         const ra = Number(a?.rating) || 0;
