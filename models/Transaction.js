@@ -14,7 +14,6 @@ const TransactionSchema = new mongoose.Schema(
     toWalletID: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Wallet',
-      required: true,
     },
     externalTransactionID: { type: String, default: '', trim: true, maxlength: 200 },
     type: {

@@ -1,6 +1,12 @@
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
+const UserAccount = require('../models/UserAccount');
 const asyncHandler = require('../middlewares/asyncHandler');
+const { isEmailConfigured, sendWalletTopupEmail } = require('../utils/mailer');
+
+function formatVnd(amount) {
+    return new Intl.NumberFormat('vi-VN').format(amount || 0);
+}
 
 // Top up wallet
 exports.topUpWallet = asyncHandler(async (req, res) => {
@@ -53,5 +59,23 @@ exports.topUpWallet = asyncHandler(async (req, res) => {
     });
 
     console.log('Transaction created:', transaction);
+
+    // Send email notification
+    const user = await UserAccount.findById(userId);
+    if (user && isEmailConfigured()) {
+        try {
+            await sendWalletTopupEmail({
+                to: user.email,
+                name: user.name,
+                amount: formatVnd(parseFloat(amount)),
+                balance: formatVnd(wallet.balance),
+                transactionId: transaction._id.toString(),
+            });
+            console.log('Topup email sent to:', user.email);
+        } catch (emailErr) {
+            console.error('Failed to send topup email:', emailErr.message);
+        }
+    }
+
     res.status(200).json({ success: true, data: { wallet, transaction } });
 });

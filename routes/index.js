@@ -5,6 +5,7 @@ const authUserRoutes = require('./user/auth');
 const userProfileRoutes = require('./user/profile');
 const walletRoutes = require('./wallet');
 const fieldsRoutes = require('./fields');
+const bookingRoutes = require('./bookings');
 
 const router = express.Router();
 
@@ -13,5 +14,6 @@ router.use('/api/auth/user', authUserRoutes);
 router.use('/api/user', userProfileRoutes);
 router.use('/api/wallets', walletRoutes);
 router.use('/api/fields', fieldsRoutes);
+router.use('/api/bookings', bookingRoutes);
 
 module.exports = router;
