@@ -106,13 +106,17 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
     '',
     'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
   ].join('\n');
+}
 
 async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
   const user = process.env.EMAIL_USER;
   const subject = 'San Sieu Toc - Xac nhan dat san thanh cong';
   const safeName = name || 'ban';
   const { fieldName, date, time, total, bookingId } = bookingDetails;
-   const text = [
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
     'Đơn đặt sân của bạn đã được xác nhận thành công!',
     '',
     '--- Thong tin dat san ---',
@@ -202,8 +206,8 @@ async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
         </div>
         <p style="color: #666; font-size: 14px;">
           ${status === 'Đang chờ hoàn tiền'
-            ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
-            : 'Tien da duoc hoan vao wallet cua ban.'}
+      ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
+      : 'Tien da duoc hoan vao wallet cua ban.'}
         </p>
         <p style="color: #666; font-size: 14px;">Neu co thac mac, vui long lien he voi chung toi.</p>
       </div>
