@@ -9,12 +9,11 @@ const TransactionSchema = new mongoose.Schema(
     fromWalletID: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Wallet',
-      required: true,
+      required: false, // Optional for top-up transactions
     },
     toWalletID: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Wallet',
-      required: true,
     },
     externalTransactionID: { type: String, default: '', trim: true, maxlength: 200 },
     type: {
@@ -26,6 +25,11 @@ const TransactionSchema = new mongoose.Schema(
     balanceBefore: { type: Number, default: 0 },
     balanceAfter: { type: Number, default: 0 },
     description: { type: String, default: '', trim: true, maxlength: 1000 },
+    bookingType: {
+      type: String,
+      enum: ['field', 'service'],
+      default: 'field',
+    },
   },
   { timestamps: true }
 );

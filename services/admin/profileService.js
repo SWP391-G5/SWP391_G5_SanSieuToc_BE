@@ -1,4 +1,5 @@
 const AdminAccount = require('../../models/AdminAccount');
+const UserAccount = require('../../models/UserAccount');
 const { verifyPassword, hashPassword } = require('../../utils/password');
 const { generateNumericCode, hashOtpCode, verifyOtpCode } = require('../../utils/otp');
 const { isEmailConfigured, sendVerificationCodeEmail } = require('../../utils/mailer');
@@ -166,8 +167,12 @@ async function requestEmailChange(adminId, payload) {
     return { status: 400, body: { message: 'Email mới phải khác email hiện tại.' } };
   }
 
-  const existing = await AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
-  if (existing) {
+  const [existingAdmin, existingUser] = await Promise.all([
+    AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } }),
+    UserAccount.findOne({ email: normalizedNewEmail }),
+  ]);
+
+  if (existingAdmin || existingUser) {
     return { status: 409, body: { message: 'Email đã tồn tại.' } };
   }
 
@@ -244,8 +249,12 @@ async function verifyEmailChange(adminId, payload) {
     return { status: 400, body: { message: 'Mã xác thực không đúng hoặc đã hết hạn.' } };
   }
 
-  const exists = await AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } });
-  if (exists) {
+  const [existsAdmin, existsUser] = await Promise.all([
+    AdminAccount.findOne({ email: normalizedNewEmail, _id: { $ne: account._id } }),
+    UserAccount.findOne({ email: normalizedNewEmail }),
+  ]);
+
+  if (existsAdmin || existsUser) {
     return { status: 409, body: { message: 'Email đã tồn tại.' } };
   }
 
