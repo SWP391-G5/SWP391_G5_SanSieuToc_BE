@@ -4,6 +4,7 @@ const Field = require('../models/Field');
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const UserAccount = require('../models/UserAccount');
+const BookingServiceHistory = require('../models/BookingServiceHistory');
 const { isEmailConfigured, sendBookingConfirmationEmail, sendBookingCancellationEmail } = require('../utils/mailer');
 
 function parsePrice(priceText) {
@@ -70,11 +71,20 @@ async function getMyBookings(req, res) {
       .populate('fieldID', 'fieldName fieldType address image')
       .lean();
 
+    const detailIds = details.map(d => d._id);
+    const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
+    
+    const servicesByDetail = {};
+    for (const sh of serviceHistories) {
+      servicesByDetail[sh.bookingDetailID.toString()] = sh;
+    }
+
     const detailsByBooking = {};
     for (const d of details) {
       if (!detailsByBooking[d.bookingID.toString()]) {
         detailsByBooking[d.bookingID.toString()] = [];
       }
+      d.services = servicesByDetail[d._id.toString()] || null;
       detailsByBooking[d.bookingID.toString()].push(d);
     }
 
@@ -95,7 +105,11 @@ async function getMyBookings(req, res) {
         }
         const startHour = new Date(d.startTime).getHours().toString().padStart(2, '0') + ':00';
         const endHour = new Date(d.endTime).getHours().toString().padStart(2, '0') + ':00';
-        groupedByDate[dateKey].push({ start: startHour, end: endHour });
+        groupedByDate[dateKey].push({ 
+          start: startHour, 
+          end: endHour,
+          id: d._id.toString()
+        });
       }
 
       const dateKeys = Object.keys(groupedByDate).sort();
@@ -106,6 +120,30 @@ async function getMyBookings(req, res) {
         date,
         slots: groupedByDate[date]
       }));
+
+      // Combine all services from all details into one array
+      let servicesList = [];
+      let servicesTotal = 0;
+      for (const d of bDetails) {
+        if (d.services?.service?.length > 0) {
+          servicesList = [...servicesList, ...d.services.service];
+          servicesTotal += d.services.totalPriceSnapShot || 0;
+        }
+      }
+
+      // Remove duplicates - keep only unique services by serviceId
+      const uniqueServicesMap = new Map();
+      for (const s of servicesList) {
+        const key = s.serviceId?.toString() || s.serviceName;
+        if (!uniqueServicesMap.has(key)) {
+          uniqueServicesMap.set(key, s);
+        } else {
+          // If already exists, add quantity
+          const existing = uniqueServicesMap.get(key);
+          existing.quantity = (existing.quantity || 1) + (s.quantity || 1);
+        }
+      }
+      const uniqueServicesList = Array.from(uniqueServicesMap.values());
 
       const statusMap = {
         Booked: 'Confirmed',
@@ -132,6 +170,8 @@ async function getMyBookings(req, res) {
         allDates,
         grandTotal: b.totalPrice,
         fieldTotal: b.fieldTotal || 0,
+        services: uniqueServicesList,
+        servicesTotal: servicesTotal,
 
         status: statusMap[b.status] || b.status,
         statusPayment: paymentStatusMap[b.statusPayment] || b.statusPayment,
@@ -146,19 +186,66 @@ async function getMyBookings(req, res) {
   }
 }
 
+async function getBookedSlots(req, res) {
+  try {
+    const { fieldId } = req.params;
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({ message: 'Date parameter is required' });
+    }
+
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const bookedDetails = await BookingDetail.find({
+      fieldID: fieldId,
+      startTime: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: 'Cancel' },
+    }).lean();
+
+    const bookedSlots = bookedDetails.map(d => {
+      const start = new Date(d.startTime);
+      const end = new Date(d.endTime);
+      const startHour = start.getHours().toString().padStart(2, '0');
+      const startMin = start.getMinutes().toString().padStart(2, '0');
+      const endHour = end.getHours().toString().padStart(2, '0');
+      const endMin = end.getMinutes().toString().padStart(2, '0');
+      return `${startHour}:${startMin} - ${endHour}:${endMin}`;
+    });
+
+    res.json({ success: true, bookedSlots });
+  } catch (err) {
+    console.error('getBookedSlots error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 async function createBooking(req, res) {
   const userId = req.user.sub || req.user.userId || req.user.id;
   const { fieldId, timeSlots, grandTotal } = req.body;
 
   console.log('=== CREATE BOOKING START ===');
+  console.log('Full request body:', JSON.stringify(req.body));
   console.log('userId:', userId);
   console.log('fieldId:', fieldId);
+  console.log('timeSlots:', timeSlots);
   console.log('grandTotal:', grandTotal);
   console.log('paymentMethod:', req.body.paymentMethod);
 
   try {
     if (!fieldId) {
+      console.log('fieldId is missing');
       return res.status(400).json({ message: 'fieldId is required' });
+    }
+
+    const timeSlotsArr = Array.isArray(req.body.timeSlots) ? req.body.timeSlots : [];
+    if (timeSlotsArr.length === 0) {
+      console.log('timeSlots is missing or empty');
+      return res.status(400).json({ message: 'timeSlots is required' });
     }
 
     let field = null;
@@ -169,19 +256,23 @@ async function createBooking(req, res) {
     if (isObjectId) {
       field = await Field.findById(fieldId);
       if (!field) {
+        console.log('Field not found for fieldId:', fieldId);
         return res.status(404).json({ message: 'Field not found' });
       }
       slotDuration = field.slotDuration || 60;
-      pricePerSlot = field.pricePerHour || 0;
+      pricePerSlot = field.hourlyPrice || field.price || 0;
     } else {
       pricePerSlot = parsePrice(req.body.fieldTotal) / (Array.isArray(timeSlots) ? timeSlots.length : 1);
     }
 
+    console.log('pricePerSlot:', pricePerSlot);
+
     const slotDetails = [];
     const fieldName = field?.fieldName || req.body.fieldName || '';
-    const fieldImage = field?.image?.[0] || req.body.fieldImage || '';
+    let fieldImage = field?.image?.[0] || req.body.fieldImage || '';
+    if (Array.isArray(fieldImage)) fieldImage = fieldImage[0] || '';
+    if (typeof fieldImage !== 'string') fieldImage = String(fieldImage || '');
 
-    const timeSlotsArr = Array.isArray(req.body.timeSlots) ? req.body.timeSlots : [];
     for (const timeSlot of timeSlotsArr) {
       const baseDate = req.body.date ? new Date(req.body.date) : new Date();
       const [hours, minutes] = timeSlot.split(':').map(Number);
@@ -339,6 +430,7 @@ async function cancelBooking(req, res) {
 
 module.exports = {
   getMyBookings,
+  getBookedSlots,
   createBooking,
   cancelBooking,
 };
