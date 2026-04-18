@@ -106,6 +106,13 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
     '',
     'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
   ].join('\n');
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+  });
 }
 
 async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {

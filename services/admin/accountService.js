@@ -198,6 +198,23 @@ async function deleteManager(id) {
   return { status: 200, body: { message: 'Đã xóa tài khoản (soft delete).', item: normalizeAdminAccount(account) } };
 }
 
+async function restoreManager(id) {
+  if (!mongoose.isValidObjectId(id)) return { status: 400, body: { message: 'ID không hợp lệ.' } };
+  const roleId = await getRoleIdByName('Manager');
+
+  const account = await AdminAccount.findOne({ _id: id, roleID: roleId }).populate('roleID');
+  if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản Manager.' } };
+
+  if (account.status !== 'Deleted') {
+    return { status: 200, body: { message: 'Tài khoản không ở trạng thái Deleted.', item: normalizeAdminAccount(account) } };
+  }
+
+  account.status = 'Active';
+  await account.save();
+
+  return { status: 200, body: { message: 'Đã khôi phục tài khoản Manager.', item: normalizeAdminAccount(account) } };
+}
+
 async function listOwners() {
   const roleId = await getRoleIdByName('Owner');
   const accounts = await UserAccount.find({ roleID: roleId })
@@ -235,11 +252,11 @@ async function createOwner(payload) {
   const managerAccount = await AdminAccount.findOne({
     _id: managerID,
     roleID: managerRoleId,
-    status: { $ne: 'Deleted' },
+    status: 'Active',
   });
 
   if (!managerAccount) {
-    return { status: 400, body: { message: 'Manager không tồn tại hoặc đã bị xóa.' } };
+    return { status: 400, body: { message: 'Manager không tồn tại hoặc chưa được kích hoạt.' } };
   }
 
   const roleId = await getRoleIdByName('Owner');
@@ -308,14 +325,33 @@ async function banCustomer(id) {
   return { status: 200, body: { message: 'Đã khóa tài khoản Customer.', item: normalizeUserAccount(account) } };
 }
 
+async function unbanCustomer(id) {
+  if (!mongoose.isValidObjectId(id)) return { status: 400, body: { message: 'ID không hợp lệ.' } };
+  const roleId = await getRoleIdByName('Customer');
+
+  const account = await UserAccount.findOne({ _id: id, roleID: roleId }).populate('roleID');
+  if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản Customer.' } };
+
+  if (account.status !== 'Banned') {
+    return { status: 200, body: { message: 'Tài khoản không ở trạng thái Banned.', item: normalizeUserAccount(account) } };
+  }
+
+  account.status = 'Active';
+  await account.save();
+
+  return { status: 200, body: { message: 'Đã mở khóa tài khoản Customer.', item: normalizeUserAccount(account) } };
+}
+
 module.exports = {
   listManagers,
   createManager,
   deactivateManager,
   deleteManager,
+  restoreManager,
   listOwners,
   createOwner,
   deactivateOwner,
   listCustomers,
   banCustomer,
+  unbanCustomer,
 };

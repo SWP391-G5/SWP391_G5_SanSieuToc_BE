@@ -20,6 +20,11 @@ async function deleteManager(req, res) {
   return res.status(status).json(body);
 }
 
+async function restoreManager(req, res) {
+  const { status, body } = await accountService.restoreManager(req.params?.id);
+  return res.status(status).json(body);
+}
+
 async function listOwners(req, res) {
   const { status, body } = await accountService.listOwners();
   return res.status(status).json(body);
@@ -45,14 +50,21 @@ async function banCustomer(req, res) {
   return res.status(status).json(body);
 }
 
+async function unbanCustomer(req, res) {
+  const { status, body } = await accountService.unbanCustomer(req.params?.id);
+  return res.status(status).json(body);
+}
+
 module.exports = {
   listManagers,
   createManager,
   deactivateManager,
   deleteManager,
+  restoreManager,
   listOwners,
   createOwner,
   deactivateOwner,
   listCustomers,
   banCustomer,
+  unbanCustomer,
 };
