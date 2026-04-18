@@ -34,6 +34,7 @@ function normalizeAdminAccount(accountDoc) {
 }
 
 function normalizeUserAccount(accountDoc) {
+  const managerDoc = accountDoc.managerID && accountDoc.managerID.username ? accountDoc.managerID : null;
   return {
     id: accountDoc._id,
     username: accountDoc.username,
@@ -43,6 +44,16 @@ function normalizeUserAccount(accountDoc) {
     address: accountDoc.address || '',
     image: accountDoc.image || '',
     role: accountDoc.roleID?.name,
+    manager: managerDoc
+      ? {
+          id: managerDoc._id,
+          username: managerDoc.username,
+          email: managerDoc.email,
+          name: managerDoc.name,
+        }
+      : accountDoc.managerID
+        ? { id: accountDoc.managerID }
+        : null,
     status: accountDoc.status,
     createdAt: accountDoc.createdAt,
     updatedAt: accountDoc.updatedAt,
@@ -189,13 +200,21 @@ async function deleteManager(id) {
 
 async function listOwners() {
   const roleId = await getRoleIdByName('Owner');
-  const accounts = await UserAccount.find({ roleID: roleId }).populate('roleID').sort({ createdAt: -1 });
+  const accounts = await UserAccount.find({ roleID: roleId })
+    .populate('roleID')
+    .populate({ path: 'managerID', select: 'username email name' })
+    .sort({ createdAt: -1 });
   return { status: 200, body: { items: accounts.map(normalizeUserAccount) } };
 }
 
 async function createOwner(payload) {
   const valid = validateCreatePayload(payload);
   if (!valid.ok) return { status: 400, body: { message: valid.message } };
+
+  const managerID = payload?.managerID || payload?.managerId;
+  if (!mongoose.isValidObjectId(managerID)) {
+    return { status: 400, body: { message: 'Vui lòng chọn Manager hợp lệ.' } };
+  }
 
   if (!isEmailConfigured()) {
     return { status: 500, body: { message: 'Chức năng gửi email chưa được cấu hình.' } };
@@ -212,6 +231,17 @@ async function createOwner(payload) {
     return { status: 409, body: { message: 'Email hoặc username đã tồn tại.' } };
   }
 
+  const managerRoleId = await getRoleIdByName('Manager');
+  const managerAccount = await AdminAccount.findOne({
+    _id: managerID,
+    roleID: managerRoleId,
+    status: { $ne: 'Deleted' },
+  });
+
+  if (!managerAccount) {
+    return { status: 400, body: { message: 'Manager không tồn tại hoặc đã bị xóa.' } };
+  }
+
   const roleId = await getRoleIdByName('Owner');
   const passwordPlain = generateRandomPassword(12);
   const passwordHash = await hashPassword(passwordPlain);
@@ -224,6 +254,7 @@ async function createOwner(payload) {
     address,
     password: passwordHash,
     roleID: roleId,
+    managerID: managerAccount._id,
     status: 'InActive',
     emailVerified: false,
   });
@@ -239,7 +270,9 @@ async function createOwner(payload) {
     return { status: 500, body: { message: 'Gửi email tài khoản thất bại. Vui lòng thử lại sau.' } };
   }
 
-  const fresh = await UserAccount.findById(account._id).populate('roleID');
+  const fresh = await UserAccount.findById(account._id)
+    .populate('roleID')
+    .populate({ path: 'managerID', select: 'username email name' });
   return { status: 201, body: { message: 'Tạo tài khoản Owner thành công.', item: normalizeUserAccount(fresh) } };
 }
 
