@@ -52,6 +52,15 @@ const UserAccountSchema = new mongoose.Schema(
       ref: 'Role',
       required: true,
     },
+
+    // (Role: Owner) The Manager (AdminAccount) responsible for this Owner.
+    // NOTE: Enforced at service layer for Owner creation.
+    managerID: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AdminAccount',
+      default: null,
+      index: true,
+    },
     status: {
       type: String,
       enum: ['Active', 'InActive', 'Banned'],
