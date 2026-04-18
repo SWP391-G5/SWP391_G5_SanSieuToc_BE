@@ -15,12 +15,11 @@ const serviceRoutes = require('./services');
 const managerRoutes = require('./manager');
 const ownerRoutes = require('./owner');
 const publicBannersRoutes = require('./public/banners');
+const publicFieldsRoutes = require('./public/fields');
 const publicPrivacyRoutes = require('./public/privacy');
-
 // My Owner routes
 const ownerFieldRoutes = require('./owner/fieldRoutes');
 const ownerServiceRoutes = require('./owner/serviceRoutes');
-
 const router = express.Router();
 
 router.use('/api/auth/admin', authAdminRoutes);
@@ -37,6 +36,7 @@ router.use('/api/services', serviceRoutes);
 router.use('/api/manager', managerRoutes);
 router.use('/api/owner', ownerRoutes);
 router.use('/api/banners', publicBannersRoutes);
+router.use('/api/public/fields', publicFieldsRoutes);
 router.use('/api/privacy', publicPrivacyRoutes);
 
 // Owner routes (specific additions)
