@@ -7,11 +7,23 @@ const VoucherSchema = new mongoose.Schema(
       ref: 'UserAccount',
       required: true,
     },
+    applicableFields: [
+      {
+        fieldID: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Field',
+          required: true,
+        },
+      },
+    ],
     voucherName: { type: String, required: true, trim: true, maxlength: 200 },
-    discount: { type: Number, required: true, min: 0 },
+
+    discountValue: { type: Number, required: true, min: 0 },
+
     beginDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     quantity: { type: Number, required: true, min: 0, default: 0 },
+    maxDiscount: { type: Number, required: true, min: 0 },
   },
   { timestamps: true }
 );

@@ -19,7 +19,7 @@ const PostSchema = new mongoose.Schema(
     postImage: [{ type: String, trim: true }],
     status: {
       type: String,
-      enum: ['Pending', 'Posted', 'Deleted'],
+      enum: ['Pending', 'Posted', 'Rejected', 'Deleted'],
       default: 'Pending',
     },
   },
