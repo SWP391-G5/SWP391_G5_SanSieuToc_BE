@@ -29,6 +29,22 @@ async function createOwnerPost(ownerId, payload) {
     if (!postName) {
       return { status: 400, body: { message: 'postName is required.' } };
     }
+    
+    // Parse previously uploaded/existing URLs
+    let providedUrls = [];
+    if (Array.isArray(payload?.postImage)) {
+      providedUrls = payload.postImage.filter(Boolean).map(String);
+    } else if (typeof payload?.postImage === 'string') {
+      const s = payload.postImage.trim();
+      if (s) {
+        try {
+          const parsed = JSON.parse(s);
+          providedUrls = Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [String(parsed)];
+        } catch {
+          providedUrls = s.includes(',') ? s.split(',').map((x) => x.trim()).filter(Boolean) : [s];
+        }
+      }
+    }
 
     const uploadedUrls = [];
     if (files.length > 0) {
@@ -40,13 +56,15 @@ async function createOwnerPost(ownerId, payload) {
         uploadedUrls.push(url);
       }
     }
+    
+    const finalUrls = [...providedUrls, ...uploadedUrls].slice(0, 6);
 
     const created = await Post.create({
       postOwnerModel: 'UserAccount',
       postOwnerID: ownerId,
       postName,
       postContent,
-      postImage: uploadedUrls,
+      postImage: finalUrls,
       status: 'Pending',
     });
 
@@ -67,6 +85,7 @@ async function createOwnerPost(ownerId, payload) {
 async function listMyPosts(ownerId) {
   try {
     const items = await Post.find({ postOwnerModel: 'UserAccount', postOwnerID: ownerId, status: { $ne: 'Deleted' } })
+      .populate('postOwnerID', 'name email username')
       .sort({ createdAt: -1 })
       .lean();
     return items;
@@ -100,6 +119,24 @@ async function updateMyPost(ownerId, postId, payload) {
       return { status: 403, body: { message: 'You can only edit your own posts.' } };
     }
 
+    const files = Array.isArray(payload?.files) ? payload.files : [];
+    
+    // Parse previously uploaded/existing URLs
+    let providedUrls = [];
+    if (Array.isArray(payload?.postImage)) {
+      providedUrls = payload.postImage.filter(Boolean).map(String);
+    } else if (typeof payload?.postImage === 'string') {
+      const s = payload.postImage.trim();
+      if (s) {
+        try {
+          const parsed = JSON.parse(s);
+          providedUrls = Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [String(parsed)];
+        } catch {
+          providedUrls = s.includes(',') ? s.split(',').map((x) => x.trim()).filter(Boolean) : [s];
+        }
+      }
+    }
+
     if (typeof payload?.postName === 'string') {
       const nextName = payload.postName.trim();
       if (!nextName) {
@@ -113,18 +150,23 @@ async function updateMyPost(ownerId, postId, payload) {
     }
 
     // If owner wants to change images, re-upload with multipart form-data images[]
-    const files = Array.isArray(payload?.files) ? payload.files : null;
-    if (files) {
-      const uploadedUrls = [];
+    let finalUrls = [...providedUrls];
+    if (files.length > 0) {
       const { uploadImageBuffer } = require('../../utils/cloudinary/uploadImageBuffer');
 
-      for (const file of files.slice(0, 6)) {
+      for (const file of files) {
+        if (finalUrls.length >= 6) break;
         if (!file?.buffer) continue;
         const { url } = await uploadImageBuffer(file.buffer, { folder: 'san-sieu-toc/posts' });
-        uploadedUrls.push(url);
+        finalUrls.push(url);
       }
+    }
 
-      post.postImage = uploadedUrls;
+    if (files.length > 0 || providedUrls.length > 0) {
+       post.postImage = finalUrls.slice(0, 6);
+    } else if (payload?.postImage !== undefined) {
+       // if explicitly sent as empty
+       post.postImage = [];
     }
 
     // Re-approval is required after any owner update

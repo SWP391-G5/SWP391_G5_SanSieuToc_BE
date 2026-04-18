@@ -39,8 +39,9 @@ async function createPost(req, res) {
  * @param {object} res - Express response
  */
 async function approvePost(req, res) {
+  const managerId = req.user?.sub;
   const { id } = req.params;
-  const { status, body } = await postService.approveOwnerPost(id);
+  const { status, body } = await postService.approveOwnerPost(id, managerId);
   return res.status(status).json(body);
 }
 
@@ -68,8 +69,9 @@ async function updatePost(req, res) {
  * @param {object} res - Express response
  */
 async function deletePost(req, res) {
+  const managerId = req.user?.sub;
   const { id } = req.params;
-  const { status, body } = await postService.softDeletePost(id);
+  const { status, body } = await postService.softDeletePost(id, managerId);
   return res.status(status).json(body);
 }
 

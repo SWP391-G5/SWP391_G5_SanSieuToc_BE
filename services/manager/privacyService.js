@@ -73,19 +73,35 @@ async function updatePrivacy(managerId, privacyId, payload) {
   const v = validatePayload(payload);
   if (!v.ok) return { status: 400, body: { message: v.message } };
 
+  // Optimistic concurrency: client must send __v they last fetched
+  const expectedVersionRaw = payload?.__v;
+  const expectedVersion = Number.isFinite(Number(expectedVersionRaw)) ? Number(expectedVersionRaw) : null;
+  if (expectedVersion === null) {
+    return { status: 400, body: { message: 'Missing __v for concurrency control.' } };
+  }
+
   const updated = await Privacy.findOneAndUpdate(
-    { _id: id },
+    { _id: id, __v: expectedVersion },
     {
       $set: {
         managerID: managerObjectId,
         privacyName: v.privacyName,
         privacyContent: v.privacyContent,
       },
+      $inc: { __v: 1 },
     },
     { new: true }
   );
 
-  if (!updated) return { status: 404, body: { message: 'Privacy not found' } };
+  if (!updated) {
+    const exists = await Privacy.exists({ _id: id });
+    if (!exists) return { status: 404, body: { message: 'Privacy not found' } };
+    return {
+      status: 409,
+      body: { message: 'This privacy was updated by someone else. Please refresh and try again.' },
+    };
+  }
+
   return { status: 200, body: updated };
 }
 
