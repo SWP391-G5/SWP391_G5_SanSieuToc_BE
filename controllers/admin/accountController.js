@@ -16,7 +16,10 @@ async function deactivateManager(req, res) {
 }
 
 async function deleteManager(req, res) {
-  const { status, body } = await accountService.deleteManager(req.params?.id);
+  const { status, body } = await accountService.deleteManager(req.params?.id, {
+    reassignToManagerID: req.body?.reassignToManagerID || req.body?.managerID || req.body?.managerId,
+    actorAdminId: req.user?.sub,
+  });
   return res.status(status).json(body);
 }
 
@@ -37,6 +40,16 @@ async function createOwner(req, res) {
 
 async function deactivateOwner(req, res) {
   const { status, body } = await accountService.deactivateOwner(req.params?.id);
+  return res.status(status).json(body);
+}
+
+async function requestDeleteOwner(req, res) {
+  const { status, body } = await accountService.requestDeleteOwner(req.params?.id, { actorAdminId: req.user?.sub });
+  return res.status(status).json(body);
+}
+
+async function restoreOwner(req, res) {
+  const { status, body } = await accountService.restoreOwner(req.params?.id);
   return res.status(status).json(body);
 }
 
@@ -64,6 +77,8 @@ module.exports = {
   listOwners,
   createOwner,
   deactivateOwner,
+  requestDeleteOwner,
+  restoreOwner,
   listCustomers,
   banCustomer,
   unbanCustomer,

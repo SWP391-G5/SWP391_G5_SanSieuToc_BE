@@ -21,6 +21,8 @@ router.patch('/accounts/managers/:id/restore', asyncHandler(accountController.re
 router.get('/accounts/owners', asyncHandler(accountController.listOwners));
 router.post('/accounts/owners', asyncHandler(accountController.createOwner));
 router.patch('/accounts/owners/:id/deactivate', asyncHandler(accountController.deactivateOwner));
+router.post('/accounts/owners/:id/request-delete', asyncHandler(accountController.requestDeleteOwner));
+router.patch('/accounts/owners/:id/restore', asyncHandler(accountController.restoreOwner));
 
 // Customer accounts (UserAccount + Role=Customer)
 router.get('/accounts/customers', asyncHandler(accountController.listCustomers));
