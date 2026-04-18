@@ -58,7 +58,7 @@ async function createBanner({ title, imageUrl, placement, order, isActive, userI
   return doc;
 }
 
-async function updateBanner(id, { title, imageUrl, placement, order, isActive, userId }) {
+async function updateBanner(id, { title, imageUrl, placement, order, isActive, userId, __v }) {
   const doc = await MarketingResource.findById(id);
   if (!doc) {
     const err = new Error('Banner not found');
@@ -73,21 +73,46 @@ async function updateBanner(id, { title, imageUrl, placement, order, isActive, u
     throw err;
   }
 
-  if (title !== undefined) doc.name = String(title || '').trim();
-  if (placement !== undefined) doc.placement = normalizePlacement(placement);
-  if (order !== undefined) doc.order = Number.isFinite(Number(order)) ? Number(order) : 0;
-  if (isActive !== undefined) doc.isActive = !!isActive;
+  // Optimistic concurrency: require __v from client
+  const expectedVersion = Number.isFinite(Number(__v)) ? Number(__v) : null;
+  if (expectedVersion === null) {
+    const err = new Error('Missing __v for concurrency control');
+    err.status = 400;
+    throw err;
+  }
 
+  // Build $set
+  const $set = {};
+  if (title !== undefined) $set.name = String(title || '').trim();
+  if (placement !== undefined) $set.placement = normalizePlacement(placement);
+  if (order !== undefined) $set.order = Number.isFinite(Number(order)) ? Number(order) : 0;
+  if (isActive !== undefined) $set.isActive = !!isActive;
   if (imageUrl !== undefined) {
     const v = String(imageUrl || '').trim();
-    doc.image = v ? [v] : [];
+    $set.image = v ? [v] : [];
   }
 
   // keep audit minimal: managerID is creator/owner, do not overwrite it on update
-  if (!doc.managerID && userId) doc.managerID = userId;
+  if (!doc.managerID && userId) $set.managerID = userId;
 
-  await doc.save();
-  return doc;
+  const updated = await MarketingResource.findOneAndUpdate(
+    { _id: id, __v: expectedVersion, type: 'banner' },
+    { $set, $inc: { __v: 1 } },
+    { new: true }
+  );
+
+  if (!updated) {
+    const exists = await MarketingResource.exists({ _id: id, type: 'banner' });
+    const err = new Error(
+      exists
+        ? 'This banner was updated by someone else. Please refresh and try again.'
+        : 'Banner not found'
+    );
+    err.status = exists ? 409 : 404;
+    throw err;
+  }
+
+  return updated;
 }
 
 async function deleteBanner(id) {

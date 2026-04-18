@@ -11,6 +11,7 @@ const managerRoutes = require('./manager');
 const ownerRoutes = require('./owner');
 const publicBannersRoutes = require('./public/banners');
 const publicPrivacyRoutes = require('./public/privacy');
+const uploadRoutes = require('./uploads');
 
 const router = express.Router();
 
@@ -25,5 +26,6 @@ router.use('/api/manager', managerRoutes);
 router.use('/api/owner', ownerRoutes);
 router.use('/api/banners', publicBannersRoutes);
 router.use('/api/privacy', publicPrivacyRoutes);
+router.use('/api/uploads', uploadRoutes);
 
 module.exports = router;
