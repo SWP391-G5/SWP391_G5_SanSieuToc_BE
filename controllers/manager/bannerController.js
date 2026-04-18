@@ -65,6 +65,7 @@ const updateBanner = asyncHandler(async (req, res) => {
   const placement = req.body?.placement;
   const order = req.body?.order;
   const isActive = req.body?.isActive;
+  const __v = req.body?.__v;
 
   let imageUrl;
   const file = (req.files || [])[0];
@@ -82,6 +83,7 @@ const updateBanner = asyncHandler(async (req, res) => {
     isActive: isActive === undefined ? undefined : isActive === 'false' ? false : !!isActive,
     imageUrl,
     userId,
+    __v,
   });
 
   res.json(toBannerDto(doc));

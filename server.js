@@ -29,7 +29,6 @@ if (!mongoUri) {
   const dns = require('dns');
   try {
     dns.setServers(['8.8.8.8', '1.1.1.1']);
-    console.log('DNS servers set to Google/Cloudflare to resolve Atlas SRV');
   } catch (e) {
     console.warn('Could not set custom DNS servers:', e.message);
   }

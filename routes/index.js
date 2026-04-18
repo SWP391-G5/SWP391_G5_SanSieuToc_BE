@@ -17,6 +17,8 @@ const ownerRoutes = require('./owner');
 const publicBannersRoutes = require('./public/banners');
 const publicFieldsRoutes = require('./public/fields');
 const publicPrivacyRoutes = require('./public/privacy');
+const uploadRoutes = require('./uploads');
+
 // My Owner routes
 const ownerFieldRoutes = require('./owner/fieldRoutes');
 const ownerServiceRoutes = require('./owner/serviceRoutes');
@@ -38,6 +40,7 @@ router.use('/api/owner', ownerRoutes);
 router.use('/api/banners', publicBannersRoutes);
 router.use('/api/public/fields', publicFieldsRoutes);
 router.use('/api/privacy', publicPrivacyRoutes);
+router.use('/api/uploads', uploadRoutes);
 
 // Owner routes (specific additions)
 router.use('/api/owner/fields', ownerFieldRoutes);

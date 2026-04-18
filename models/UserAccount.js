@@ -63,8 +63,15 @@ const UserAccountSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Active', 'InActive', 'Banned'],
+      enum: ['Active', 'InActive', 'Banned', 'Deleted'],
       default: 'Active',
+    },
+
+    // Owner deletion scheduling (Admin requests deletion; executed after a grace period).
+    deletion: {
+      requestedAt: { type: Date },
+      scheduledAt: { type: Date },
+      requestedByAdminId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminAccount' },
     },
 
     emailVerified: {
@@ -88,5 +95,7 @@ const UserAccountSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+UserAccountSchema.index({ 'deletion.scheduledAt': 1 });
 
 module.exports = mongoose.model('UserAccount', UserAccountSchema);
