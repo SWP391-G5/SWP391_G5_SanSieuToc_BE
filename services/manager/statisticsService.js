@@ -55,6 +55,24 @@ function parseDateRange(query = {}) {
       const end = new Date(todayStart.getFullYear(), todayStart.getMonth(), 0);
       return { from: toStartOfDay(start), to: toEndOfDay(end) };
     }
+
+    // ===== Year-based presets (<= 1 year) =====
+    if (preset === 'thisYear') {
+      const start = new Date(todayStart.getFullYear(), 0, 1);
+      return { from: toStartOfDay(start), to: toEndOfDay(today) };
+    }
+
+    if (preset === 'lastYear') {
+      const start = new Date(todayStart.getFullYear() - 1, 0, 1);
+      const end = new Date(todayStart.getFullYear() - 1, 11, 31);
+      return { from: toStartOfDay(start), to: toEndOfDay(end) };
+    }
+
+    // Rolling 12 months / 365 days (inclusive of today)
+    if (preset === 'last365days' || preset === 'last12months') {
+      const from = toStartOfDay(new Date(todayStart.getTime() - 364 * 24 * 60 * 60 * 1000));
+      return { from, to: toEndOfDay(today) };
+    }
   }
 
   if (fromRaw || toRaw) {
