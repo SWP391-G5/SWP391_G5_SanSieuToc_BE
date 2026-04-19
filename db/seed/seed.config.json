@@ -1,0 +1,9 @@
+{
+  "mongoUri": "mongodb+srv://sangnvhe172569_db_user:ojJPMOPRA1snPxQb@sansieutoc.vz2skpi.mongodb.net/sansieutoc",
+  "managerAdminId": "69dfd69ddde202f2d7203f19",
+  "roleIds": {
+    "owner": "",
+    "customer": "",
+    "manager": "69dfd69db8a36fd8931274ca"
+  }
+}
