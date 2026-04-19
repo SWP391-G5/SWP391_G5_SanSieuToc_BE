@@ -1,4 +1,5 @@
-const { Field, Service } = require('../models');
+const mongoose = require('mongoose');
+const { Field, Service, Feedback } = require('../models');
 const asyncHandler = require('../middlewares/asyncHandler');
 
 // Get field by ID
@@ -64,11 +65,109 @@ exports.getFieldWithServices = asyncHandler(async (req, res) => {
 
   const services = await Service.find({ fieldID: fieldId });
 
+  const fieldIdString = String(fieldId);
+  const hasObjectId = mongoose.isValidObjectId(fieldIdString);
+  const fieldIdObject = hasObjectId ? new mongoose.Types.ObjectId(fieldIdString) : null;
+
+  const feedbackFieldMatch = hasObjectId
+    ? {
+        $or: [
+          { 'detail.fieldID': fieldIdString },
+          { 'detail.fieldID': fieldIdObject },
+        ],
+      }
+    : { 'detail.fieldID': fieldIdString };
+
+  const feedbackPipelineBase = [
+    { $match: { isDeleted: { $ne: true } } },
+    {
+      $lookup: {
+        from: 'bookingdetails',
+        localField: 'bookingDetailID',
+        foreignField: '_id',
+        as: 'detail',
+      },
+    },
+    { $unwind: '$detail' },
+    { $match: feedbackFieldMatch },
+    {
+      $lookup: {
+        from: 'bookings',
+        localField: 'detail.bookingID',
+        foreignField: '_id',
+        as: 'booking',
+      },
+    },
+    { $unwind: { path: '$booking', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'useraccounts',
+        localField: 'booking.customerID',
+        foreignField: '_id',
+        as: 'customer',
+      },
+    },
+    { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+  ];
+
+  const [feedbackRows, feedbackSummaryRows] = await Promise.all([
+    Feedback.aggregate([
+      ...feedbackPipelineBase,
+      { $sort: { createdAt: -1 } },
+      { $limit: 50 },
+      {
+        $project: {
+          _id: 1,
+          bookingDetailID: 1,
+          rate: 1,
+          content: 1,
+          createdAt: 1,
+          user: {
+            id: '$customer._id',
+            name: '$customer.name',
+            username: '$customer.username',
+            image: '$customer.image',
+          },
+        },
+      },
+    ]),
+    Feedback.aggregate([
+      ...feedbackPipelineBase,
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          avgRate: { $avg: '$rate' },
+        },
+      },
+    ]),
+  ]);
+
+  const summary = feedbackSummaryRows[0] || { total: 0, avgRate: 0 };
+
+  const feedbacks = feedbackRows.map((x) => ({
+    id: String(x._id),
+    bookingDetailID: String(x.bookingDetailID),
+    rate: Number(x.rate) || 0,
+    content: x.content || '',
+    createdAt: x.createdAt,
+    user: {
+      id: x.user?.id ? String(x.user.id) : '',
+      name: x.user?.name || x.user?.username || 'User',
+      image: x.user?.image || '',
+    },
+  }));
+
   res.status(200).json({
     success: true,
     data: {
       field,
       services,
+      feedbackSummary: {
+        total: Number(summary.total) || 0,
+        avgRate: Number(summary.avgRate) || 0,
+      },
+      feedbacks,
     },
   });
 });

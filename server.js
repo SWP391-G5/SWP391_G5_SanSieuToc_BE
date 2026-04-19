@@ -38,11 +38,11 @@ const routes = require('./routes');
 app.use(routes);
 
 app.get('/', async (req, res) => {
-    try {
-        res.send({message: 'Welcome to San Sieu Toc API!'});
-    } catch (error) {
-        res.send({error: error.message});
-    }
+  try {
+    res.send({ message: 'Welcome to San Sieu Toc API!' });
+  } catch (error) {
+    res.send({ error: error.message });
+  }
 });
 
 // Global error handler (JSON)
@@ -55,10 +55,10 @@ const PORT = process.env.PORT || 9999;
 // ============================================
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  
+
   const status = err.status || 500;
   const message = err.message || 'Internal Server Error';
-  
+
   res.status(status).json({
     success: false,
     message: message,

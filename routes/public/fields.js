@@ -16,7 +16,10 @@ function normalizeText(s) {
   return String(s || '')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function inferCity(doc) {
@@ -43,6 +46,75 @@ function inferCity(doc) {
   if (isHcm) return 'TP.HCM';
   if (isHanoi) return 'Ha Noi';
   return '';
+}
+
+function cleanAddressUnit(s) {
+  return String(s || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,\s.-]+|[,\s.-]+$/g, '')
+    .trim();
+}
+
+function findAddressUnit(address, patterns) {
+  const raw = String(address || '').trim();
+  if (!raw) return '';
+
+  const parts = raw
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const scan = (candidate) => {
+    for (const rx of patterns) {
+      const m = String(candidate || '').match(rx);
+      if (m?.[0]) return cleanAddressUnit(m[0]);
+    }
+    return '';
+  };
+
+  for (let i = parts.length - 1; i >= 0; i -= 1) {
+    const found = scan(parts[i]);
+    if (found) return found;
+  }
+
+  return scan(raw);
+}
+
+function inferDistrict(doc) {
+  return findAddressUnit(doc?.address, [
+    /\bDistrict\s*\d+\b/i,
+    /\bDistrict\s+[\p{L}\p{N}\s.-]+\b/iu,
+    /\b(?:Quan|Quận|Huyen|Huyện)\s*[\p{L}\p{N}\s.-]+\b/iu,
+    /\b(?:TP\.?\s*)?(?:Thu\s*Duc|Thủ\s*Đức)\b/iu,
+  ]);
+}
+
+function inferStreet(doc) {
+  const rawAddress = String(doc?.address || '').trim();
+  if (!rawAddress) return '';
+
+  const firstPart = cleanAddressUnit(rawAddress.split(',')[0] || '');
+  if (!firstPart) return '';
+
+  const alreadyStreetLike =
+    /^(?:duong|đường|street|thon|thôn|xom|xóm|ap|ấp|to|tổ|ngo|ngõ|hem|hẻm)\b/iu.test(firstPart);
+
+  if (alreadyStreetLike) return firstPart;
+
+  const withoutHouseNumber = cleanAddressUnit(
+    firstPart.replace(/^(?:so\s*)?\d+[\p{L}\p{N}/.-]*\s+/iu, '')
+  );
+
+  return withoutHouseNumber || firstPart;
+}
+
+function inferWard(doc) {
+  return findAddressUnit(doc?.address, [
+    /\bWard\s*\d+\b/i,
+    /\bWard\s+[\p{L}\p{N}\s.-]+\b/iu,
+    /\b(?:P\.?|Phuong|Phường)\s*[\p{L}\p{N}\s.-]+\b/iu,
+    /\b(?:Xa|Xã|Thi\s*Tran|Thị\s*Trấn)\s*[\p{L}\p{N}\s.-]+\b/iu,
+  ]);
 }
 
 function inferSizeKey(doc) {
@@ -103,6 +175,9 @@ function getEffectiveHourlyPrice(doc) {
 function toFieldDto(doc, ratingMap) {
   const id = String(doc?._id || '');
   const city = inferCity(doc);
+  const district = inferDistrict(doc);
+  const street = inferStreet(doc);
+  const ward = inferWard(doc);
   const sizeKey = inferSizeKey(doc);
 
   const avgRate = ratingMap.get(id);
@@ -117,6 +192,9 @@ function toFieldDto(doc, ratingMap) {
     name: doc?.fieldName || '',
     address: doc?.address || '',
     city,
+    district,
+    street,
+    ward,
     rating,
     size: `${sizeKey}-A-SIDE`,
     sizeKey,
@@ -177,7 +255,11 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const q = String(req.query.q || '').trim();
+    const normalizedQ = normalizeText(q);
     const city = String(req.query.city || '').trim();
+    const district = String(req.query.district || '').trim();
+    const street = String(req.query.street || '').trim();
+    const ward = String(req.query.ward || '').trim();
     const sizeKey = String(req.query.sizeKey || '').trim();
     const priceMin = req.query.priceMin !== undefined ? Number(req.query.priceMin) : NaN;
     const priceMax = req.query.priceMax !== undefined ? Number(req.query.priceMax) : NaN;
@@ -185,12 +267,12 @@ router.get(
     const selectedUtilities = parseUtilitiesParam(req.query.utilities);
 
     const filter = { status: { $ne: 'Deleted' } };
-    if (q) {
-      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ fieldName: rx }, { address: rx }];
-    }
 
     let docs = await Field.find(filter).sort({ createdAt: -1 }).lean();
+
+    if (normalizedQ) {
+      docs = docs.filter((d) => normalizeText(d?.fieldName).includes(normalizedQ));
+    }
 
     // Price filter supports both `hourlyPrice` and legacy `price` schema.
     if (Number.isFinite(priceMin) || Number.isFinite(priceMax)) {
@@ -205,6 +287,18 @@ router.get(
     // In-memory filters for robust matching (city/sizeKey/utilities) regardless of how DB stores them.
     if (city) {
       docs = docs.filter((d) => inferCity(d) === city);
+    }
+
+    if (city && district) {
+      docs = docs.filter((d) => normalizeText(inferDistrict(d)) === normalizeText(district));
+    }
+
+    if (city && district && street) {
+      docs = docs.filter((d) => normalizeText(inferStreet(d)) === normalizeText(street));
+    }
+
+    if (city && district && ward) {
+      docs = docs.filter((d) => normalizeText(inferWard(d)) === normalizeText(ward));
     }
 
     if (sizeKey) {
