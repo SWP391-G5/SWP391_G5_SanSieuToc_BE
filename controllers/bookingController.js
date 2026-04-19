@@ -359,7 +359,8 @@ async function createBooking(req, res) {
         return res.status(404).json({ message: 'Field not found' });
       }
       slotDuration = field.slotDuration || 60;
-      pricePerSlot = field.hourlyPrice || field.price || 0;
+      const hourlyPrice = field.hourlyPrice || field.price || 0;
+      pricePerSlot = Math.round(hourlyPrice * (slotDuration / 60));
     } else {
       pricePerSlot = parsePrice(req.body.fieldTotal) / (Array.isArray(timeSlots) ? timeSlots.length : 1);
     }
