@@ -22,6 +22,7 @@ router.get('/', asyncHandler(postController.listPosts));
 // Multipart form-data (preferred): images[]
 router.post('/', upload.array('images', 6), asyncHandler(postController.createPost));
 router.patch('/:id/approve', asyncHandler(postController.approvePost));
+router.patch('/:id/reject', asyncHandler(postController.rejectPost));
 router.put('/:id', upload.array('images', 6), asyncHandler(postController.updatePost));
 router.delete('/:id', asyncHandler(postController.deletePost));
 
