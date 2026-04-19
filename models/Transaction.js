@@ -9,7 +9,7 @@ const TransactionSchema = new mongoose.Schema(
     fromWalletID: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Wallet',
-      required: false, // Optional for top-up transactions
+      required: false,
     },
     toWalletID: {
       type: mongoose.Schema.Types.ObjectId,
@@ -30,6 +30,19 @@ const TransactionSchema = new mongoose.Schema(
       enum: ['field', 'service'],
       default: 'field',
     },
+    ownerID: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserAccount',
+    },
+    bankName: { type: String, trim: true },
+    accountNumber: { type: String, trim: true },
+    accountName: { type: String, trim: true },
+    withdrawStatus: {
+      type: String,
+      enum: ['Pending', 'Approved', 'Rejected', 'Completed'],
+      default: 'Pending',
+    },
+    note: { type: String, default: '' },
   },
   { timestamps: true }
 );

@@ -2,10 +2,37 @@ const cron = require('node-cron');
 
 const Role = require('../models/Role');
 const UserAccount = require('../models/UserAccount');
+const BookingDetail = require('../models/BookingDetail');
 
+let autoCompleteJobStarted = false;
 function startAutoCompleteJob() {
-  // Stub for now. Original project may have booking auto-complete cron.
-  // Keep as no-op so server can boot.
+  if (autoCompleteJobStarted) return;
+  autoCompleteJobStarted = true;
+
+  cron.schedule(
+    '* * * * *',
+    async () => {
+      try {
+        const now = new Date();
+        
+        const result = await BookingDetail.updateMany(
+          { 
+            status: 'Active',
+            endTime: { $lte: now }
+          },
+          { $set: { status: 'End' } }
+        );
+        
+        if (result.modifiedCount > 0) {
+          console.log(`[AutoComplete] Updated ${result.modifiedCount} booking details to End status`);
+        }
+      } catch (err) {
+        console.error('[AutoComplete] Error:', err.message);
+      }
+    },
+    { timezone: 'Asia/Ho_Chi_Minh' }
+  );
+  console.log('[Cron] AutoComplete job started - updates booking status to Ended');
 }
 
 let ownerDeletionJobStarted = false;
