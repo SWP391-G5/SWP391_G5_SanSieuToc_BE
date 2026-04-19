@@ -44,7 +44,9 @@ async function getManagerTransactions(managerId, limit = 20) {
       return [];
     }
 
-    const transactions = await Transaction.find({ toWalletID: wallet._id })
+    const transactions = await Transaction.find({ 
+      $or: [{ toWalletID: wallet._id }, { fromWalletID: wallet._id }]
+    })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
