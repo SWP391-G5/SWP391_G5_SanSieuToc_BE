@@ -10,6 +10,7 @@ const managerBannersRoutes = require('./banners');
 const managerPrivacyRoutes = require('./privacy');
 const managerStatisticsRoutes = require('./statistics');
 const managerScopeRoutes = require('./scope');
+const managerFeedbackRoutes = require('./feedback');
 
 const router = express.Router();
 
@@ -18,5 +19,6 @@ router.use('/banners', managerBannersRoutes);
 router.use('/privacy', managerPrivacyRoutes);
 router.use('/statistics', managerStatisticsRoutes);
 router.use('/scope', managerScopeRoutes);
+router.use('/feedback', managerFeedbackRoutes);
 
 module.exports = router;

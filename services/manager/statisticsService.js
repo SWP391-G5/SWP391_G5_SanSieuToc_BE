@@ -226,6 +226,7 @@ async function getSummary(managerId, query = {}) {
   const fieldIds = await resolveScopedFieldIds(ownerIds, query);
   const bookingIds = await resolveBookingIdsByFieldIds(fieldIds);
 
+  // Total Bookings (unique Booking documents)
   const bookingMatch = {
     ...(bookingIds.length
       ? { _id: { $in: bookingIds.map((id) => new mongoose.Types.ObjectId(id)) } }
@@ -233,7 +234,37 @@ async function getSummary(managerId, query = {}) {
     ...buildDateMatch('createdAt', range),
   };
 
-  const bookingsCount = await Booking.countDocuments(bookingMatch);
+  const totalBookingsCount = await Booking.countDocuments(bookingMatch);
+
+  // Total slots booked (BookingDetail rows) - same unit as Top Fields
+  let totalSlotsBooked = 0;
+  if (fieldIds.length) {
+    const idsAsString = fieldIds.map((id) => String(id));
+
+    const detailRows = await BookingDetail.aggregate([
+      {
+        $match: {
+          $or: [{ fieldID: { $in: fieldIds } }, { fieldID: { $in: idsAsString } }],
+        },
+      },
+      {
+        $lookup: {
+          from: 'bookings',
+          localField: 'bookingID',
+          foreignField: '_id',
+          as: 'booking',
+        },
+      },
+      { $unwind: '$booking' },
+      { $match: buildDateMatch('booking.createdAt', range) },
+      { $count: 'total' },
+    ]);
+
+    totalSlotsBooked = detailRows?.[0]?.total || 0;
+  }
+
+  // Backward-compat: bookingsCount now equals totalBookingsCount
+  const bookingsCount = totalBookingsCount;
 
   const txMatch = {
     ...(bookingIds.length
@@ -278,6 +309,8 @@ async function getSummary(managerId, query = {}) {
       ownersCount,
       fieldsCount,
       bookingsCount,
+      totalBookingsCount,
+      totalSlotsBooked,
       fieldRevenue,
       serviceRevenue,
       grossRevenue,
@@ -423,6 +456,7 @@ async function getHotFields(managerId, query = {}) {
   const range = parseDateRange(query);
   const limit = Math.max(1, Math.min(50, Number(query.limit) || 5));
 
+  // STRICT scope: only owners assigned to this manager
   const ownerIds = await resolveScopedOwnerIds(managerId, query);
   const fieldIds = await resolveScopedFieldIds(ownerIds, query);
 
@@ -438,9 +472,10 @@ async function getHotFields(managerId, query = {}) {
 
   const idsAsString = fieldIds.map((id) => String(id));
 
-  // Join BookingDetail -> Booking to filter by Booking.createdAt (your choice)
+  // Join BookingDetail -> Booking to filter by Booking.createdAt (scoped)
   const rows = await BookingDetail.aggregate([
     {
+      // BookingDetail.fieldID is Mixed, so we match both ObjectId and string
       $match: {
         $or: [{ fieldID: { $in: fieldIds } }, { fieldID: { $in: idsAsString } }],
       },
@@ -465,18 +500,28 @@ async function getHotFields(managerId, query = {}) {
     { $limit: limit },
   ]);
 
-  // Hydrate fieldName
-  const fieldIdStrings = rows.map((r) => String(r._id));
-  const fields = await Field.find({ _id: { $in: fieldIdStrings.filter((x) => mongoose.isValidObjectId(x)) } })
-    .select('_id fieldName')
-    .lean();
-  const nameById = new Map(fields.map((f) => [String(f._id), f.fieldName]));
+  // Hydrate fieldName + ownerID from scoped fields only (double safety)
+  const rowFieldIds = rows.map((r) => String(r._id));
+  const scopedFieldIdStrings = fieldIds.map((x) => String(x));
+  const allowSet = new Set(scopedFieldIdStrings);
+  const safeFieldIds = rowFieldIds.filter((id) => allowSet.has(String(id)) && mongoose.isValidObjectId(String(id)));
 
-  const items = rows.map((r) => ({
-    fieldId: String(r._id),
-    fieldName: nameById.get(String(r._id)) || '',
-    bookingsCount: r.bookingsCount || 0,
-  }));
+  const fields = await Field.find({ _id: { $in: safeFieldIds } })
+    .select('_id fieldName ownerID')
+    .lean();
+  const metaById = new Map(fields.map((f) => [String(f._id), { fieldName: f.fieldName, ownerId: f.ownerID ? String(f.ownerID) : '' }]));
+
+  const items = rows
+    .map((r) => {
+      const meta = metaById.get(String(r._id)) || { fieldName: '', ownerId: '' };
+      return {
+        fieldId: String(r._id),
+        fieldName: meta.fieldName || '',
+        ownerId: meta.ownerId || '',
+        bookingsCount: r.bookingsCount || 0,
+      };
+    })
+    .filter((x) => allowSet.has(String(x.fieldId)));
 
   return {
     status: 200,
