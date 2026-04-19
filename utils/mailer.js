@@ -50,16 +50,16 @@ function getTransporter() {
 
 async function sendNewPasswordEmail({ to, name, newPassword }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Mat khau moi';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Mật khẩu mới';
+  const safeName = name || 'bạn';
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    'He thong da tao mat khau moi cho tai khoan cua ban:',
+    'Hệ thống đã tạo mật khẩu mới cho tài khoản của bạn:',
     `${newPassword}`,
     '',
-    'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
+    'Vui lòng đăng nhập và đổi mật khẩu ngay sau khi đăng nhập.',
   ].join('\n');
 
   return getTransporter().sendMail({
@@ -72,16 +72,16 @@ async function sendNewPasswordEmail({ to, name, newPassword }) {
 
 async function sendVerificationCodeEmail({ to, name, code }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Ma xac thuc tai khoan';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Mã xác thực tài khoản';
+  const safeName = name || 'bạn';
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    'Ma xac thuc tai khoan cua ban la:',
+    'Mã xác thực tài khoản của bạn là:',
     `${code}`,
     '',
-    'Ma nay co hieu luc trong 5 phut.',
+    'Mã này có hiệu lực trong 5 phút.',
   ].join('\n');
 
   return getTransporter().sendMail({
@@ -94,17 +94,27 @@ async function sendVerificationCodeEmail({ to, name, code }) {
 
 async function sendAccountCredentialsEmail({ to, name, username, password, role }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Tai khoan cua ban';
-  const safeName = name || 'ban';
-  const safeRole = role || 'nguoi dung';
+  const subject = 'Sân Siêu Tốc - Tài khoản của bạn';
+  const safeName = name || 'bạn';
+  const roleKey = String(role || '').trim();
+  const safeRole =
+    roleKey === 'Admin'
+      ? 'Quản trị viên'
+      : roleKey === 'Manager'
+        ? 'Quản lý'
+        : roleKey === 'Owner'
+          ? 'Chủ sân'
+          : roleKey === 'Customer'
+            ? 'Khách hàng'
+            : roleKey || 'người dùng';
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    `He thong da tao tai khoan ${safeRole} cho ban:`,
-    `Username: ${username}`,
-    `Password: ${password}`,
+    `Hệ thống đã tạo tài khoản ${safeRole} cho bạn:`,
+    `Tên đăng nhập: ${username}`,
+    `Mật khẩu: ${password}`,
     '',
-    'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
+    'Vui lòng đăng nhập và đổi mật khẩu ngay sau khi đăng nhập.',
   ].join('\n');
 
   return getTransporter().sendMail({
@@ -117,43 +127,43 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
 
 async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Xac nhan dat san thanh cong';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Xác nhận đặt sân thành công';
+  const safeName = name || 'bạn';
   const { fieldName, date, time, total, bookingId } = bookingDetails;
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
     'Đơn đặt sân của bạn đã được xác nhận thành công!',
     '',
-    '--- Thong tin dat san ---',
-    `Ma dat san: ${bookingId}`,
-    `San: ${fieldName}`,
-    `Ngay: ${date}`,
-    `Gio: ${time}`,
-    `Tong tien: ${total} VND`,
+    '--- Thông tin đặt sân ---',
+    `Mã đặt sân: ${bookingId}`,
+    `Sân: ${fieldName}`,
+    `Ngày: ${date}`,
+    `Giờ: ${time}`,
+    `Tổng tiền: ${total} VND`,
     '',
-    'Cam on ban da su dung dich vu San Sieu Toc!',
+    'Cảm ơn bạn đã sử dụng dịch vụ Sân Siêu Tốc!',
   ].join('\n');
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: linear-gradient(135deg, #6dff9e, #2ff801); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
-        <h1 style="color: #0d6100; margin: 0;">San Sieu Toc</h1>
-        <p style="color: #0d6100; margin: 5px 0 0;">Dat san thanh cong!</p>
+        <h1 style="color: #0d6100; margin: 0;">Sân Siêu Tốc</h1>
+        <p style="color: #0d6100; margin: 5px 0 0;">Đặt sân thành công!</p>
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
-        <p>Xin chao <strong>${safeName}</strong>,</p>
+        <p>Xin chào <strong>${safeName}</strong>,</p>
         <p>Đơn đặt sân của bạn đã được xác nhận thành công!</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
-          <h3 style="margin: 0 0 10px; color: #333;">Thong tin dat san</h3>
-          <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
-          <p style="margin: 5px 0;"><strong>San:</strong> ${fieldName}</p>
-          <p style="margin: 5px 0;"><strong>Ngay:</strong> ${date}</p>
-          <p style="margin: 5px 0;"><strong>Gio:</strong> ${time}</p>
-          <p style="margin: 5px 0;"><strong>Tong tien:</strong> <span style="color: #6dff9e; font-weight: bold;">${total} VND</span></p>
+          <h3 style="margin: 0 0 10px; color: #333;">Thông tin đặt sân</h3>
+          <p style="margin: 5px 0;"><strong>Mã đặt sân:</strong> ${bookingId}</p>
+          <p style="margin: 5px 0;"><strong>Sân:</strong> ${fieldName}</p>
+          <p style="margin: 5px 0;"><strong>Ngày:</strong> ${date}</p>
+          <p style="margin: 5px 0;"><strong>Giờ:</strong> ${time}</p>
+          <p style="margin: 5px 0;"><strong>Tổng tiền:</strong> <span style="color: #6dff9e; font-weight: bold;">${total} VND</span></p>
         </div>
-        <p style="color: #666; font-size: 14px;">Cam on ban da su dung dich vu San Sieu Toc!</p>
+        <p style="color: #666; font-size: 14px;">Cảm ơn bạn đã sử dụng dịch vụ Sân Siêu Tốc!</p>
       </div>
     </div>
   `;
@@ -169,54 +179,54 @@ async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
 
 async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Yeu cau huy dat san';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Yêu cầu hủy đặt sân';
+  const safeName = name || 'bạn';
   const { fieldName, date, time, total, bookingId, status } = bookingDetails;
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
     `Yêu cầu hủy đặt sân của bạn đã được tiến hành. Dưới đây là thông tin chi tiết về yêu cầu hủy:`,
     '',
-    '--- Thong tin dat san ---',
-    `Ma dat san: ${bookingId}`,
-    `San: ${fieldName}`,
-    `Ngay: ${date}`,
-    `Gio: ${time}`,
-    `Tong tien: ${total} VND`,
-    `Trang thai: ${status}`,
+    '--- Thông tin đặt sân ---',
+    `Mã đặt sân: ${bookingId}`,
+    `Sân: ${fieldName}`,
+    `Ngày: ${date}`,
+    `Giờ: ${time}`,
+    `Tổng tiền: ${total} VND`,
+    `Trạng thái: ${status}`,
     '',
     status === 'Đang chờ hoàn tiền'
-      ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
-      : 'Tien da duoc hoan vao wallet cua ban.',
+      ? 'Vui lòng chờ Chủ sân xác nhận hoàn tiền. Tiền sẽ được hoàn lại vào ví sau khi xác nhận.'
+      : 'Tiền đã được hoàn vào ví của bạn.',
     '',
-    'Neu co thac mac, vui long lien he voi chung toi.',
+    'Nếu có thắc mắc, vui lòng liên hệ với chúng tôi.',
   ].join('\n');
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: linear-gradient(135deg, #ffc864, #ff9632); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
-        <h1 style="color: #fff; margin: 0;">San Sieu Toc</h1>
-        <p style="color: #fff; margin: 5px 0 0;">Yeu cau huy dat san</p>
+        <h1 style="color: #fff; margin: 0;">Sân Siêu Tốc</h1>
+        <p style="color: #fff; margin: 5px 0 0;">Yêu cầu hủy đặt sân</p>
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
-        <p>Xin chao <strong>${safeName}</strong>,</p>
+        <p>Xin chào <strong>${safeName}</strong>,</p>
         <p> Yêu cầu hủy đặt sân của bạn đã được tiến hành. Dưới đây là thông tin chi tiết về yêu cầu hủy:</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc864;">
-          <h3 style="margin: 0 0 10px; color: #333;">Thong tin dat san</h3>
-          <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
-          <p style="margin: 5px 0;"><strong>San:</strong> ${fieldName}</p>
-          <p style="margin: 5px 0;"><strong>Ngay:</strong> ${date}</p>
-          <p style="margin: 5px 0;"><strong>Gio:</strong> ${time}</p>
-          <p style="margin: 5px 0;"><strong>Tong tien:</strong> ${total} VND</p>
-          <p style="margin: 5px 0;"><strong>Trang thai:</strong> <span style="color: #ff9632; font-weight: bold;">${status}</span></p>
+          <h3 style="margin: 0 0 10px; color: #333;">Thông tin đặt sân</h3>
+          <p style="margin: 5px 0;"><strong>Mã đặt sân:</strong> ${bookingId}</p>
+          <p style="margin: 5px 0;"><strong>Sân:</strong> ${fieldName}</p>
+          <p style="margin: 5px 0;"><strong>Ngày:</strong> ${date}</p>
+          <p style="margin: 5px 0;"><strong>Giờ:</strong> ${time}</p>
+          <p style="margin: 5px 0;"><strong>Tổng tiền:</strong> ${total} VND</p>
+          <p style="margin: 5px 0;"><strong>Trạng thái:</strong> <span style="color: #ff9632; font-weight: bold;">${status}</span></p>
         </div>
         <p style="color: #666; font-size: 14px;">
           ${status === 'Đang chờ hoàn tiền'
-      ? 'Vui long cho Owner xac nhan hoan tien. Tien se duoc hoan lai vao wallet sau khi xac nhan.'
-      : 'Tien da duoc hoan vao wallet cua ban.'}
+      ? 'Vui lòng chờ Chủ sân xác nhận hoàn tiền. Tiền sẽ được hoàn lại vào ví sau khi xác nhận.'
+      : 'Tiền đã được hoàn vào ví của bạn.'}
         </p>
-        <p style="color: #666; font-size: 14px;">Neu co thac mac, vui long lien he voi chung toi.</p>
+        <p style="color: #666; font-size: 14px;">Nếu có thắc mắc, vui lòng liên hệ với chúng tôi.</p>
       </div>
     </div>
   `;
@@ -232,41 +242,41 @@ async function sendBookingCancellationEmail({ to, name, bookingDetails }) {
 
 async function sendWalletTopupEmail({ to, name, amount, balance, transactionId }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Nap tien wallet thanh cong';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Nạp tiền ví thành công';
+  const safeName = name || 'bạn';
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    'Tài khoản wallet của bạn đã được nạp tiền thành công!',
+    'Tài khoản ví của bạn đã được nạp tiền thành công!',
     '',
-    '--- Chi tiet giao dich ---',
-    `Ma giao dich: ${transactionId || 'N/A'}`,
-    `So tien nap: +${amount} VND`,
-    `So du hien tai: ${balance} VND`,
+    '--- Chi tiết giao dịch ---',
+    `Mã giao dịch: ${transactionId || 'N/A'}`,
+    `Số tiền nạp: +${amount} VND`,
+    `Số dư hiện tại: ${balance} VND`,
     '',
-    'Ban co the su dung so du nay de dat san.',
+    'Bạn có thể sử dụng số dư này để đặt sân.',
     '',
-    'Cam on ban da su dung dich vu San Sieu Toc!',
+    'Cảm ơn bạn đã sử dụng dịch vụ Sân Siêu Tốc!',
   ].join('\n');
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: linear-gradient(135deg, #6dff9e, #2ff801); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
-        <h1 style="color: #0d6100; margin: 0;">San Sieu Toc</h1>
-        <p style="color: #0d6100; margin: 5px 0 0;">Nap tien wallet thanh cong!</p>
+        <h1 style="color: #0d6100; margin: 0;">Sân Siêu Tốc</h1>
+        <p style="color: #0d6100; margin: 5px 0 0;">Nạp tiền ví thành công!</p>
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
-        <p>Xin chao <strong>${safeName}</strong>,</p>
-        <p>Tài khoản wallet của bạn đã được nạp tiền thành công!</p>
+        <p>Xin chào <strong>${safeName}</strong>,</p>
+        <p>Tài khoản ví của bạn đã được nạp tiền thành công!</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
-          <h3 style="margin: 0 0 10px; color: #333;">Chi tiet giao dich</h3>
-          <p style="margin: 5px 0;"><strong>Ma giao dich:</strong> ${transactionId || 'N/A'}</p>
-          <p style="margin: 5px 0;"><strong>So tien nap:</strong> <span style="color: #6dff9e; font-weight: bold;">+${amount} VND</span></p>
-          <p style="margin: 5px 0;"><strong>So du hien tai:</strong> <span style="font-weight: bold;">${balance} VND</span></p>
+          <h3 style="margin: 0 0 10px; color: #333;">Chi tiết giao dịch</h3>
+          <p style="margin: 5px 0;"><strong>Mã giao dịch:</strong> ${transactionId || 'N/A'}</p>
+          <p style="margin: 5px 0;"><strong>Số tiền nạp:</strong> <span style="color: #6dff9e; font-weight: bold;">+${amount} VND</span></p>
+          <p style="margin: 5px 0;"><strong>Số dư hiện tại:</strong> <span style="font-weight: bold;">${balance} VND</span></p>
         </div>
-        <p style="color: #666; font-size: 14px;">Ban co the su dung so du nay de dat san.</p>
-        <p style="color: #666; font-size: 14px;">Cam on ban da su dung dich vu San Sieu Toc!</p>
+        <p style="color: #666; font-size: 14px;">Bạn có thể sử dụng số dư này để đặt sân.</p>
+        <p style="color: #666; font-size: 14px;">Cảm ơn bạn đã sử dụng dịch vụ Sân Siêu Tốc!</p>
       </div>
     </div>
   `;
@@ -282,43 +292,43 @@ async function sendWalletTopupEmail({ to, name, amount, balance, transactionId }
 
 async function sendWalletRefundEmail({ to, name, amount, balance, bookingId, reason }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Hoan tien wallet thanh cong';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Hoàn tiền ví thành công';
+  const safeName = name || 'bạn';
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    'Tien hoan tu huy dat san da duoc chuyen vao wallet cua ban!',
+    'Tiền hoàn từ hủy đặt sân đã được chuyển vào ví của bạn!',
     '',
-    '--- Chi tiet hoan tien ---',
-    `Ma dat san: ${bookingId}`,
-    `Ly do: ${reason || 'Huy dat san'}`,
-    `So tien hoan: +${amount} VND`,
-    `So du hien tai: ${balance} VND`,
+    '--- Chi tiết hoàn tiền ---',
+    `Mã đặt sân: ${bookingId}`,
+    `Lý do: ${reason || 'Hủy đặt sân'}`,
+    `Số tiền hoàn: +${amount} VND`,
+    `Số dư hiện tại: ${balance} VND`,
     '',
-    'Ban co the su dung so du nay de dat san khac.',
+    'Bạn có thể sử dụng số dư này để đặt sân khác.',
     '',
-    'Cam on ban da su dung dich vu San Sieu Toc!',
+    'Cảm ơn bạn đã sử dụng dịch vụ Sân Siêu Tốc!',
   ].join('\n');
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: linear-gradient(135deg, #6dff9e, #2ff801); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
-        <h1 style="color: #0d6100; margin: 0;">San Sieu Toc</h1>
-        <p style="color: #0d6100; margin: 5px 0 0;">Hoan tien thanh cong!</p>
+        <h1 style="color: #0d6100; margin: 0;">Sân Siêu Tốc</h1>
+        <p style="color: #0d6100; margin: 5px 0 0;">Hoàn tiền thành công!</p>
       </div>
       <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
-        <p>Xin chao <strong>${safeName}</strong>,</p>
-        <p>Tien hoan tu huy dat san da duoc chuyen vao wallet cua ban!</p>
+        <p>Xin chào <strong>${safeName}</strong>,</p>
+        <p>Tiền hoàn từ hủy đặt sân đã được chuyển vào ví của bạn!</p>
         <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #6dff9e;">
-          <h3 style="margin: 0 0 10px; color: #333;">Chi tiet hoan tien</h3>
-          <p style="margin: 5px 0;"><strong>Ma dat san:</strong> ${bookingId}</p>
-          <p style="margin: 5px 0;"><strong>Ly do:</strong> ${reason || 'Huy dat san'}</p>
-          <p style="margin: 5px 0;"><strong>So tien hoan:</strong> <span style="color: #6dff9e; font-weight: bold;">+${amount} VND</span></p>
-          <p style="margin: 5px 0;"><strong>So du hien tai:</strong> <span style="font-weight: bold;">${balance} VND</span></p>
+          <h3 style="margin: 0 0 10px; color: #333;">Chi tiết hoàn tiền</h3>
+          <p style="margin: 5px 0;"><strong>Mã đặt sân:</strong> ${bookingId}</p>
+          <p style="margin: 5px 0;"><strong>Lý do:</strong> ${reason || 'Hủy đặt sân'}</p>
+          <p style="margin: 5px 0;"><strong>Số tiền hoàn:</strong> <span style="color: #6dff9e; font-weight: bold;">+${amount} VND</span></p>
+          <p style="margin: 5px 0;"><strong>Số dư hiện tại:</strong> <span style="font-weight: bold;">${balance} VND</span></p>
         </div>
-        <p style="color: #666; font-size: 14px;">Ban co the su dung so du nay de dat san khac.</p>
-        <p style="color: #666; font-size: 14px;">Cam on ban da su dung dich vu San Sieu Toc!</p>
+        <p style="color: #666; font-size: 14px;">Bạn có thể sử dụng số dư này để đặt sân khác.</p>
+        <p style="color: #666; font-size: 14px;">Cảm ơn bạn đã sử dụng dịch vụ Sân Siêu Tốc!</p>
       </div>
     </div>
   `;
@@ -338,7 +348,7 @@ function formatVnd(amount) {
 
 async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmail }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'Sân Siêu Tốc - Thông báo xóa tài khoản Manager';
+  const subject = 'Sân Siêu Tốc - Thông báo xóa tài khoản Quản lý';
   const safeName = name || 'bạn';
   const safeAdminEmail = adminEmail || user;
   const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
@@ -346,12 +356,12 @@ async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmai
   const text = [
     `Xin chào ${safeName},`,
     '',
-    'Hệ thống nhận được yêu cầu xóa tài khoản Manager của bạn.',
+    'Hệ thống nhận được yêu cầu xóa tài khoản Quản lý của bạn.',
     'Bạn có 3 ngày để rút hết số dư trong ví (nếu có) trước khi tài khoản bị xóa.',
     '',
     `Thời gian dự kiến xóa tài khoản: ${safeDate}`,
     '',
-    `Nếu bạn có thắc mắc, vui lòng liên hệ Admin qua email: ${safeAdminEmail}`,
+    `Nếu bạn có thắc mắc, vui lòng liên hệ Quản trị viên qua email: ${safeAdminEmail}`,
     '',
     'Trân trọng,',
     'Sân Siêu Tốc',
@@ -367,7 +377,7 @@ async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmai
 
 async function sendOwnerDeletionScheduledEmail({ to, name, scheduledAt, adminEmail }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'Sân Siêu Tốc - Thông báo xóa tài khoản Owner';
+  const subject = 'Sân Siêu Tốc - Thông báo xóa tài khoản Chủ sân';
   const safeName = name || 'bạn';
   const safeAdminEmail = adminEmail || user;
   const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
@@ -375,12 +385,12 @@ async function sendOwnerDeletionScheduledEmail({ to, name, scheduledAt, adminEma
   const text = [
     `Xin chào ${safeName},`,
     '',
-    'Hệ thống nhận được yêu cầu xóa tài khoản Owner của bạn.',
+    'Hệ thống nhận được yêu cầu xóa tài khoản Chủ sân của bạn.',
     'Bạn có 3 ngày để rút hết số dư trong ví (nếu có) trước khi tài khoản bị xóa.',
     '',
     `Thời gian dự kiến xóa tài khoản: ${safeDate}`,
     '',
-    `Nếu bạn cần hỗ trợ, vui lòng liên hệ Admin qua email: ${safeAdminEmail}`,
+    `Nếu bạn cần hỗ trợ, vui lòng liên hệ Quản trị viên qua email: ${safeAdminEmail}`,
     '',
     'Trân trọng,',
     'Sân Siêu Tốc',
