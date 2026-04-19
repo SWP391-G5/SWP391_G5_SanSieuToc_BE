@@ -19,23 +19,17 @@ app.use(cors({
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-const mongoUri = process.env.MONGO_URI;
-if (!mongoUri) {
-  console.error(
-    'MONGO_URI is not set. Create a .env file next to server.js with MONGO_URI=<your MongoDB connection string> and restart the server.'
-  );
-} else {
-  mongoose
-    .connect(mongoUri)
-    .then(() => {
-      console.log('Connected to MongoDB');
-
-      // Start cron jobs after DB connection
-      const { startAutoCompleteJob } = require('./utils/cronJobs');
-      startAutoCompleteJob();
-    })
-    .catch((err) => console.error('MongoDB connection error:', err));
-}
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('Connected to MongoDB');
+    
+    // Start cron jobs after DB connection
+    const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob } = require('./utils/cronJobs');
+    startAutoCompleteJob();
+    startOwnerDeletionJob();
+    startManagerDeletionJob();
+  })
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Load all models
 require('./models');

@@ -106,6 +106,13 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
     '',
     'Vui long dang nhap va doi mat khau ngay sau khi dang nhap.',
   ].join('\n');
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+  });
 }
 
 async function sendBookingConfirmationEmail({ to, name, bookingDetails }) {
@@ -325,6 +332,68 @@ async function sendWalletRefundEmail({ to, name, amount, balance, bookingId, rea
   });
 }
 
+function formatVnd(amount) {
+  return new Intl.NumberFormat('vi-VN').format(Number(amount || 0));
+}
+
+async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmail }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Thong bao tai khoan Manager';
+  const safeName = name || 'ban';
+  const safeAdminEmail = adminEmail || user;
+  const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    'He thong nhan duoc yeu cau xoa tai khoan Manager cua ban.',
+    'Ban co 3 ngay de rut het so du trong vi (neu co) truoc khi tai khoan bi xoa.',
+    '',
+    `Thoi gian du kien xoa tai khoan: ${safeDate}`,
+    '',
+    `Neu ban co thac mac, vui long lien he Admin qua email: ${safeAdminEmail}`, 
+    '',
+    'Tran trong,',
+    'San Sieu Toc',
+  ].join('\n');
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+  });
+}
+
+async function sendOwnerDeletionScheduledEmail({ to, name, scheduledAt, adminEmail }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'San Sieu Toc - Thong bao xoa tai khoan Owner';
+  const safeName = name || 'ban';
+  const safeAdminEmail = adminEmail || user;
+  const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
+
+  const text = [
+    `Xin chao ${safeName},`,
+    '',
+    'He thong nhan duoc yeu cau xoa tai khoan Owner cua ban.',
+    'Ban co 3 ngay de rut het so du trong vi (neu co) truoc khi tai khoan bi xoa.',
+    '',
+    `Thoi gian du kien xoa tai khoan: ${safeDate}`,
+    '',
+    `Neu ban can ho tro, vui long lien he Admin qua email: ${safeAdminEmail}`,
+    '',
+    'Tran trong,',
+    'San Sieu Toc',
+  ].join('\n');
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+  });
+}
+
 module.exports = {
   isEmailConfigured,
   createTransporter,
@@ -335,4 +404,6 @@ module.exports = {
   sendBookingCancellationEmail,
   sendWalletTopupEmail,
   sendWalletRefundEmail,
+  sendManagerDeletionNoticeEmail,
+  sendOwnerDeletionScheduledEmail,
 };

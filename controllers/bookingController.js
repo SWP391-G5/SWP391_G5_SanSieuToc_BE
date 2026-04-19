@@ -4,7 +4,8 @@ const Field = require('../models/Field');
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const UserAccount = require('../models/UserAccount');
-const { isEmailConfigured, sendBookingConfirmationEmail, sendBookingCancellationEmail } = require('../utils/mailer');
+const BookingServiceHistory = require('../models/BookingServiceHistory');
+const { isEmailConfigured, sendBookingConfirmationEmail, sendBookingCancellationEmail, sendWalletRefundEmail } = require('../utils/mailer');
 
 function parsePrice(priceText) {
   if (typeof priceText === 'number') return priceText;
@@ -16,7 +17,9 @@ function formatVnd(amount) {
   return new Intl.NumberFormat('vi-VN').format(amount || 0);
 }
 
-async function deductWalletBalance(userId, amount, bookingId) {
+async function deductWalletBalance(userId, amount, bookingId, ownerId) {
+  console.log('=== deductWalletBalance called ===');
+  console.log('userId:', userId, 'amount:', amount, 'bookingId:', bookingId, 'ownerId:', ownerId);
   let wallet = await Wallet.findOne({ walletOwnerId: userId, walletOwnerModel: 'UserAccount' });
   
   if (!wallet) {
@@ -33,7 +36,7 @@ async function deductWalletBalance(userId, amount, bookingId) {
     throw err;
   }
 
-  const balanceBefore = wallet.balance;
+  const customerBalanceBefore = wallet.balance;
   wallet.balance -= amount;
   await wallet.save();
 
@@ -43,11 +46,108 @@ async function deductWalletBalance(userId, amount, bookingId) {
     toWalletID: null,
     type: 'Field Payment',
     amount: amount,
-    balanceBefore,
+    balanceBefore: customerBalanceBefore,
     balanceAfter: wallet.balance,
     description: 'Booking payment',
     bookingType: 'field',
   });
+
+  if (ownerId) {
+    console.log('==> Creating owner wallet transaction for ownerId:', ownerId);
+    let ownerWallet = await Wallet.findOne({ walletOwnerId: ownerId, walletOwnerModel: 'Owner' });
+    
+    if (!ownerWallet) {
+      ownerWallet = await Wallet.create({
+        walletOwnerId: ownerId,
+        walletOwnerModel: 'Owner',
+        balance: 0,
+      });
+      console.log('==> Created new owner wallet:', ownerWallet._id);
+    }
+
+    const ownerAmount = Math.floor(amount * 0.9);
+    const managerAmount = Math.floor(amount * 0.1);
+    const ownerBalanceBefore = ownerWallet.balance;
+    ownerWallet.balance += ownerAmount;
+    await ownerWallet.save();
+    console.log('==> Owner wallet updated:', ownerBalanceBefore, '->', ownerWallet.balance);
+
+    const Booking = require('../models/Booking');
+    const BookingDetail = require('../models/BookingDetail');
+    const UserAccount = require('../models/UserAccount');
+    const Field = require('../models/Field');
+    
+    const booking = await Booking.findById(bookingId).lean();
+    const customer = await UserAccount.findById(booking?.customerID).lean();
+    const details = await BookingDetail.find({ bookingID: bookingId }).lean();
+    const field = details[0]?.fieldID ? await Field.findById(details[0].fieldID).lean() : null;
+    const owner = field?.ownerID ? await UserAccount.findById(field.ownerID).populate('managerID').lean() : null;
+    const managerId = owner?.managerID?._id;
+    const ownerName = owner?.name || owner?.username || 'Unknown Owner';
+    const fieldName = field?.fieldName || details[0]?.fieldName || 'Unknown';
+    const managerDescription = `Hoa hồng 10% từ owner ${ownerName}`;
+    const ownerDescription = `Doanh thu 90% từ sân ${fieldName}`;
+    
+    console.log('==> owner:', owner?.name);
+    console.log('==> owner.managerID:', owner?.managerID);
+    console.log('==> managerId found:', managerId);
+    console.log('==> managerAmount (10%):', managerAmount);
+    
+    if (!managerId) {
+      console.log('==> SKIP: No managerId - managerID is null/undefined');
+    } else {
+      console.log('==> Processing manager wallet...');
+      let managerWallet = await Wallet.findOne({ walletOwnerId: managerId });
+      console.log('==> Manager wallet query result:', managerWallet);
+      if (!managerWallet) {
+        managerWallet = await Wallet.create({
+          walletOwnerId: managerId,
+          walletOwnerModel: 'AdminAccount',
+          balance: 0,
+        });
+        console.log('==> Created new manager wallet:', managerWallet._id);
+      } else {
+        if (managerWallet.walletOwnerModel !== 'AdminAccount') {
+          managerWallet.walletOwnerModel = 'AdminAccount';
+          await managerWallet.save();
+          console.log('==> Updated manager wallet model to AdminAccount');
+        }
+      }
+      
+      const managerBalanceBefore = managerWallet.balance;
+      managerWallet.balance += managerAmount;
+      await managerWallet.save();
+      console.log('==> Manager wallet updated:', managerBalanceBefore, '->', managerWallet.balance);
+      
+      await Transaction.create({
+        bookingID: bookingId,
+        fromWalletID: null,
+        toWalletID: managerWallet._id,
+        type: 'Field Payment',
+        amount: managerAmount,
+        balanceBefore: managerBalanceBefore,
+        balanceAfter: managerWallet.balance,
+        description: managerDescription,
+        bookingType: 'field',
+      });
+      console.log('==> Transaction created for manager');
+    }
+    
+    await Transaction.create({
+      bookingID: bookingId,
+      fromWalletID: null,
+      toWalletID: ownerWallet._id,
+      type: 'Field Payment',
+      amount: ownerAmount,
+      balanceBefore: ownerBalanceBefore,
+      balanceAfter: ownerWallet.balance,
+      description: ownerDescription,
+      bookingType: 'field',
+    });
+    console.log('==> Transaction created for owner');
+  } else {
+    console.log('==> NO ownerId - skipping owner wallet transfer');
+  }
 
   return wallet;
 }
@@ -70,11 +170,20 @@ async function getMyBookings(req, res) {
       .populate('fieldID', 'fieldName fieldType address image')
       .lean();
 
+    const detailIds = details.map(d => d._id);
+    const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
+    
+    const servicesByDetail = {};
+    for (const sh of serviceHistories) {
+      servicesByDetail[sh.bookingDetailID.toString()] = sh;
+    }
+
     const detailsByBooking = {};
     for (const d of details) {
       if (!detailsByBooking[d.bookingID.toString()]) {
         detailsByBooking[d.bookingID.toString()] = [];
       }
+      d.services = servicesByDetail[d._id.toString()] || null;
       detailsByBooking[d.bookingID.toString()].push(d);
     }
 
@@ -95,7 +204,11 @@ async function getMyBookings(req, res) {
         }
         const startHour = new Date(d.startTime).getHours().toString().padStart(2, '0') + ':00';
         const endHour = new Date(d.endTime).getHours().toString().padStart(2, '0') + ':00';
-        groupedByDate[dateKey].push({ start: startHour, end: endHour });
+        groupedByDate[dateKey].push({ 
+          start: startHour, 
+          end: endHour,
+          id: d._id.toString()
+        });
       }
 
       const dateKeys = Object.keys(groupedByDate).sort();
@@ -106,6 +219,30 @@ async function getMyBookings(req, res) {
         date,
         slots: groupedByDate[date]
       }));
+
+      // Combine all services from all details into one array
+      let servicesList = [];
+      let servicesTotal = 0;
+      for (const d of bDetails) {
+        if (d.services?.service?.length > 0) {
+          servicesList = [...servicesList, ...d.services.service];
+          servicesTotal += d.services.totalPriceSnapShot || 0;
+        }
+      }
+
+      // Remove duplicates - keep only unique services by serviceId
+      const uniqueServicesMap = new Map();
+      for (const s of servicesList) {
+        const key = s.serviceId?.toString() || s.serviceName;
+        if (!uniqueServicesMap.has(key)) {
+          uniqueServicesMap.set(key, s);
+        } else {
+          // If already exists, add quantity
+          const existing = uniqueServicesMap.get(key);
+          existing.quantity = (existing.quantity || 1) + (s.quantity || 1);
+        }
+      }
+      const uniqueServicesList = Array.from(uniqueServicesMap.values());
 
       const statusMap = {
         Booked: 'Confirmed',
@@ -132,6 +269,8 @@ async function getMyBookings(req, res) {
         allDates,
         grandTotal: b.totalPrice,
         fieldTotal: b.fieldTotal || 0,
+        services: uniqueServicesList,
+        servicesTotal: servicesTotal,
 
         status: statusMap[b.status] || b.status,
         statusPayment: paymentStatusMap[b.statusPayment] || b.statusPayment,
@@ -146,19 +285,66 @@ async function getMyBookings(req, res) {
   }
 }
 
+async function getBookedSlots(req, res) {
+  try {
+    const { fieldId } = req.params;
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({ message: 'Date parameter is required' });
+    }
+
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const bookedDetails = await BookingDetail.find({
+      fieldID: fieldId,
+      startTime: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: 'Cancel' },
+    }).lean();
+
+    const bookedSlots = bookedDetails.map(d => {
+      const start = new Date(d.startTime);
+      const end = new Date(d.endTime);
+      const startHour = start.getHours().toString().padStart(2, '0');
+      const startMin = start.getMinutes().toString().padStart(2, '0');
+      const endHour = end.getHours().toString().padStart(2, '0');
+      const endMin = end.getMinutes().toString().padStart(2, '0');
+      return `${startHour}:${startMin} - ${endHour}:${endMin}`;
+    });
+
+    res.json({ success: true, bookedSlots });
+  } catch (err) {
+    console.error('getBookedSlots error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 async function createBooking(req, res) {
   const userId = req.user.sub || req.user.userId || req.user.id;
   const { fieldId, timeSlots, grandTotal } = req.body;
 
   console.log('=== CREATE BOOKING START ===');
+  console.log('Full request body:', JSON.stringify(req.body));
   console.log('userId:', userId);
   console.log('fieldId:', fieldId);
+  console.log('timeSlots:', timeSlots);
   console.log('grandTotal:', grandTotal);
-  console.log('paymentMethod:', req.body.paymentMethod);
+  console.log('paymentMethod from body:', req.body.paymentMethod);
 
   try {
     if (!fieldId) {
+      console.log('fieldId is missing');
       return res.status(400).json({ message: 'fieldId is required' });
+    }
+
+    const timeSlotsArr = Array.isArray(req.body.timeSlots) ? req.body.timeSlots : [];
+    if (timeSlotsArr.length === 0) {
+      console.log('timeSlots is missing or empty');
+      return res.status(400).json({ message: 'timeSlots is required' });
     }
 
     let field = null;
@@ -169,19 +355,23 @@ async function createBooking(req, res) {
     if (isObjectId) {
       field = await Field.findById(fieldId);
       if (!field) {
+        console.log('Field not found for fieldId:', fieldId);
         return res.status(404).json({ message: 'Field not found' });
       }
       slotDuration = field.slotDuration || 60;
-      pricePerSlot = field.pricePerHour || 0;
+      pricePerSlot = field.hourlyPrice || field.price || 0;
     } else {
       pricePerSlot = parsePrice(req.body.fieldTotal) / (Array.isArray(timeSlots) ? timeSlots.length : 1);
     }
 
+    console.log('pricePerSlot:', pricePerSlot);
+
     const slotDetails = [];
     const fieldName = field?.fieldName || req.body.fieldName || '';
-    const fieldImage = field?.image?.[0] || req.body.fieldImage || '';
+    let fieldImage = field?.image?.[0] || req.body.fieldImage || '';
+    if (Array.isArray(fieldImage)) fieldImage = fieldImage[0] || '';
+    if (typeof fieldImage !== 'string') fieldImage = String(fieldImage || '');
 
-    const timeSlotsArr = Array.isArray(req.body.timeSlots) ? req.body.timeSlots : [];
     for (const timeSlot of timeSlotsArr) {
       const baseDate = req.body.date ? new Date(req.body.date) : new Date();
       const [hours, minutes] = timeSlot.split(':').map(Number);
@@ -225,10 +415,25 @@ async function createBooking(req, res) {
 
     if (paymentMethod === 'wallet' && totalPrice > 0) {
       console.log('Processing wallet payment...');
-      await deductWalletBalance(userId, totalPrice, booking._id);
+      let ownerId = field?.ownerID || null;
+      
+      if (!ownerId && fieldId) {
+        const Field = require('../models/Field');
+        const fieldForOwner = await Field.findById(fieldId);
+        ownerId = fieldForOwner?.ownerID || null;
+        console.log('ownerId from refetch:', ownerId);
+      }
+      
+      console.log('=== PAYMENT DEBUG ===');
+      console.log('fieldId:', fieldId);
+      console.log('ownerId:', ownerId);
+      console.log('totalPrice:', totalPrice);
+      console.log('paymentMethod:', paymentMethod);
+      
+      await deductWalletBalance(userId, totalPrice, booking._id, ownerId);
       booking.statusPayment = 'Completed';
       await booking.save();
-      console.log('Wallet deducted, booking completed');
+      console.log('Wallet deducted, booking completed, ownerId:', ownerId);
     }
 
     console.log('=== CREATE BOOKING SUCCESS ===');
@@ -268,8 +473,8 @@ async function createBooking(req, res) {
   } catch (err) {
     console.error('=== CREATE BOOKING ERROR ===');
     console.error('Error:', err.message);
-    console.error(err.stack);
-    res.status(500).json({ message: 'Server error: ' + err.message });
+    console.error('Stack:', err.stack);
+    return res.status(500).json({ message: 'Server error: ' + err.message });
   }
 }
 
@@ -337,8 +542,146 @@ async function cancelBooking(req, res) {
   }
 }
 
+async function getOwnerRefundRequests(req, res) {
+  try {
+    const ownerId = req.user.sub || req.user.id || req.user._id;
+    console.log('=== getOwnerRefundRequests ===');
+    const mongoose = require('mongoose');
+    const Booking = require('../models/Booking');
+    const BookingDetail = require('../models/BookingDetail');
+    
+    const ObjectId = mongoose.Types.ObjectId;
+    const bookingIdToFind = "69e4793f9acecc873aa96561";
+    
+    const detail = await BookingDetail.findOne({ bookingID: new ObjectId(bookingIdToFind) }).lean();
+    console.log('BookingDetail for', bookingIdToFind, ':', detail);
+    
+    const bookings = await Booking.find({ status: 'Cancel Request' }).lean();
+    console.log('Total Cancel Request:', bookings.length);
+    res.json({ count: bookings.length, refunds: bookings });
+  } catch (err) {
+    console.error('getOwnerRefundRequests error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
+async function approveRefund(req, res) {
+  try {
+    const { bookingId } = req.params;
+    const ownerId = req.user.sub || req.user.id || req.user._id;
+    console.log('approveRefund bookingId:', bookingId);
+    const Booking = require('../models/Booking');
+    const Wallet = require('../models/Wallet');
+    const Transaction = require('../models/Transaction');
+    const BookingDetail = require('../models/BookingDetail');
+    const mongoose = require('mongoose');
+    
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    
+    const refundAmount = Math.floor(booking.totalPrice * 0.8);
+    const customerId = booking.customerID;
+    
+    let customerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(customerId), walletOwnerModel: 'UserAccount' });
+    if (!customerWallet) {
+      customerWallet = await Wallet.create({
+        walletOwnerId: new mongoose.Types.ObjectId(customerId),
+        walletOwnerModel: 'UserAccount',
+        balance: 0,
+      });
+    }
+    
+    const customerBalanceBefore = customerWallet.balance;
+    customerWallet.balance += refundAmount;
+    await customerWallet.save();
+    
+    await Transaction.create({
+      bookingID: bookingId,
+      fromWalletID: null,
+      toWalletID: customerWallet._id,
+      type: 'Refund',
+      amount: refundAmount,
+      balanceBefore: customerBalanceBefore,
+      balanceAfter: customerWallet.balance,
+      description: `Refund 80% for cancelled booking`,
+      bookingType: 'field',
+    });
+    
+    let ownerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(ownerId), walletOwnerModel: 'Owner' });
+    if (!ownerWallet) {
+      ownerWallet = await Wallet.create({
+        walletOwnerId: new mongoose.Types.ObjectId(ownerId),
+        walletOwnerModel: 'Owner',
+        balance: 0,
+      });
+    }
+    
+    const ownerBalanceBefore = ownerWallet.balance;
+    ownerWallet.balance -= refundAmount;
+    await ownerWallet.save();
+    
+    await Transaction.create({
+      bookingID: bookingId,
+      fromWalletID: ownerWallet._id,
+      toWalletID: null,
+      type: 'Refund',
+      amount: -refundAmount,
+      balanceBefore: ownerBalanceBefore,
+      balanceAfter: ownerWallet.balance,
+      description: `Refund 80% for cancelled booking`,
+      bookingType: 'field',
+    });
+    
+    booking.status = 'Cancel';
+    booking.statusPayment = 'Refunded';
+    await booking.save();
+    
+    const customer = await UserAccount.findById(customerId).lean();
+    if (customer && isEmailConfigured()) {
+      try {
+        await sendWalletRefundEmail({
+          to: customer.email,
+          name: customer.name,
+          amount: refundAmount,
+          type: 'refund',
+        });
+      } catch (e) {
+        console.log('Failed to send refund email:', e.message);
+      }
+    }
+    
+    res.json({ success: true, message: `Refund ${refundAmount} VND approved (80%)`, ownerBalance: ownerWallet.balance });
+  } catch (err) {
+    console.error('approveRefund error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message, stack: err.stack });
+  }
+}
+
+async function rejectRefund(req, res) {
+  try {
+    const { bookingId } = req.params;
+    const Booking = require('../models/Booking');
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    booking.status = 'Booked';
+    await booking.save();
+    res.json({ success: true, message: 'Refund rejected' });
+  } catch (err) {
+    console.error('rejectRefund error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 module.exports = {
   getMyBookings,
+  getBookedSlots,
   createBooking,
   cancelBooking,
+  getOwnerRefundRequests,
+  approveRefund,
+  rejectRefund,
 };

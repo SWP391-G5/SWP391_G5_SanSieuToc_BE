@@ -8,8 +8,9 @@
 const mongoose = require('mongoose');
 
 const Post = require('../../models/Post');
+const UserAccount = require('../../models/UserAccount');
 
-const ALLOWED_STATUSES = ['Pending', 'Posted', 'Rejected', 'Deleted'];
+const ALLOWED_STATUSES = ['Draft', 'Pending', 'Posted', 'Rejected', 'Deleted'];
 
 /**
  * parsePaging
@@ -38,6 +39,11 @@ function parsePaging(query) {
  */
 function buildPostListFilter(query) {
   const filter = {};
+
+  // Default behavior: do not show Drafts unless explicitly requested
+  if (!query?.status) {
+    filter.status = { $ne: 'Draft' };
+  }
 
   if (query?.status && ALLOWED_STATUSES.includes(String(query.status))) {
     filter.status = String(query.status);
@@ -76,8 +82,13 @@ async function listPosts(query) {
     const { page, limit, skip } = parsePaging(query);
     const filter = buildPostListFilter(query);
 
+    let sortObj = { createdAt: -1 };
+    if (query?.sort === 'created_asc') sortObj = { createdAt: 1 };
+    if (query?.sort === 'updated_desc') sortObj = { updatedAt: -1 };
+    if (query?.sort === 'updated_asc') sortObj = { updatedAt: 1 };
+
     const [items, total] = await Promise.all([
-      Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Post.find(filter).populate('postOwnerID', 'name email username').sort(sortObj).skip(skip).limit(limit).lean(),
       Post.countDocuments(filter),
     ]);
 
@@ -101,8 +112,30 @@ async function createManagerPost(adminId, payload) {
     const postName = String(payload?.postName || '').trim();
     const postContent = String(payload?.postContent || '').trim();
 
+    // accept pre-uploaded urls (e.g. draft images stored as urls)
+    let providedUrls = [];
+    if (Array.isArray(payload?.postImage)) {
+      providedUrls = payload.postImage.filter(Boolean).map(String);
+    } else if (typeof payload?.postImage === 'string') {
+      const s = payload.postImage.trim();
+      if (s) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) providedUrls = parsed.filter(Boolean).map(String);
+          else providedUrls = [String(parsed)];
+        } catch {
+          // fallback comma-separated or single
+          providedUrls = s.includes(',') ? s.split(',').map((x) => x.trim()).filter(Boolean) : [s];
+        }
+      }
+    }
+
     // Multipart upload (preferred): uploaded files are in payload.files (from multer)
     const files = Array.isArray(payload?.files) ? payload.files : [];
+
+    // Allow explicitly creating Draft in DB
+    const requestedStatus = String(payload?.status || '').trim();
+    const status = requestedStatus === 'Draft' ? 'Draft' : 'Posted';
 
     if (!postName) {
       return { status: 400, body: { message: 'postName is required.' } };
@@ -119,13 +152,15 @@ async function createManagerPost(adminId, payload) {
       }
     }
 
+    const finalUrls = [...providedUrls, ...uploadedUrls].slice(0, 6);
+
     const created = await Post.create({
       postOwnerModel: 'AdminAccount',
       postOwnerID: adminId,
       postName,
       postContent,
-      postImage: uploadedUrls,
-      status: 'Posted',
+      postImage: finalUrls,
+      status,
     });
 
     return { status: 201, body: created };
@@ -142,10 +177,14 @@ async function createManagerPost(adminId, payload) {
  * @param {string} postId - Post _id
  * @returns {Promise<{status:number, body:any}>}
  */
-async function approveOwnerPost(postId) {
+async function approveOwnerPost(postId, managerId) {
   try {
     if (!mongoose.Types.ObjectId.isValid(String(postId))) {
       return { status: 400, body: { message: 'Invalid post id.' } };
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(String(managerId))) {
+      return { status: 401, body: { message: 'Unauthorized' } };
     }
 
     const post = await Post.findById(postId);
@@ -161,6 +200,16 @@ async function approveOwnerPost(postId) {
       return { status: 400, body: { message: 'Only Pending posts can be approved.' } };
     }
 
+    // Authorization: only the assigned Manager can approve this owner's post
+    const owner = await UserAccount.findById(post.postOwnerID).select('managerID roleID').lean();
+    if (!owner) {
+      return { status: 400, body: { message: 'Post owner not found.' } };
+    }
+
+    if (!owner.managerID || String(owner.managerID) !== String(managerId)) {
+      return { status: 403, body: { message: 'You are not authorized to approve posts for this owner.' } };
+    }
+
     post.status = 'Posted';
     await post.save();
 
@@ -172,18 +221,21 @@ async function approveOwnerPost(postId) {
 }
 
 /**
- * updateManagerOwnedPost
- * Manager edits only posts that they created.
+ * rejectOwnerPost
+ * Manager rejects an owner's pending post (Pending -> Rejected).
  *
- * @param {string} adminId - AdminAccount _id
  * @param {string} postId - Post _id
- * @param {{postName?:string, postContent?:string, postImage?:string[]}} payload - updated fields
+ * @param {string} managerId - AdminAccount _id from JWT sub
  * @returns {Promise<{status:number, body:any}>}
  */
-async function updateManagerOwnedPost(adminId, postId, payload) {
+async function rejectOwnerPost(postId, managerId) {
   try {
     if (!mongoose.Types.ObjectId.isValid(String(postId))) {
       return { status: 400, body: { message: 'Invalid post id.' } };
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(String(managerId))) {
+      return { status: 401, body: { message: 'Unauthorized' } };
     }
 
     const post = await Post.findById(postId);
@@ -191,25 +243,78 @@ async function updateManagerOwnedPost(adminId, postId, payload) {
       return { status: 404, body: { message: 'Post not found.' } };
     }
 
-    if (post.postOwnerModel !== 'AdminAccount' || String(post.postOwnerID) !== String(adminId)) {
-      return { status: 403, body: { message: 'You can only edit your own manager posts.' } };
+    if (post.postOwnerModel !== 'UserAccount') {
+      return { status: 400, body: { message: 'Only owner posts can be rejected.' } };
     }
 
-    if (typeof payload?.postName === 'string') {
-      const nextName = payload.postName.trim();
-      if (!nextName) {
-        return { status: 400, body: { message: 'postName cannot be empty.' } };
-      }
-      post.postName = nextName;
+    if (String(post.status) !== 'Pending') {
+      return { status: 400, body: { message: 'Only Pending posts can be rejected.' } };
     }
 
-    if (typeof payload?.postContent === 'string') {
-      post.postContent = payload.postContent.trim();
+    // Authorization: only the assigned Manager can reject this owner's post
+    const owner = await UserAccount.findById(post.postOwnerID).select('managerID').lean();
+    if (!owner) {
+      return { status: 400, body: { message: 'Post owner not found.' } };
     }
 
-    const files = Array.isArray(payload?.files) ? payload.files : null;
-    if (files) {
-      const uploadedUrls = [];
+    if (!owner.managerID || String(owner.managerID) !== String(managerId)) {
+      return { status: 403, body: { message: 'You are not authorized to reject posts for this owner.' } };
+    }
+
+    post.status = 'Rejected';
+    await post.save();
+
+    return { status: 200, body: post };
+  } catch (error) {
+    console.error('[manager.postService.rejectOwnerPost] Failed:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * updateManagerOwnedPost
+ * Updates a post owned by the manager (AdminAccount).
+ *
+ * @param {string} postId - Post _id
+ * @param {string} adminId - AdminAccount _id
+ * @param {{postName?:string, postContent?:string, postImage?:string[], status?:string}} payload
+ * @returns {Promise<{status:number, body:any}>}
+ */
+async function updateManagerOwnedPost(postId, adminId, payload) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(postId))) {
+      return { status: 400, body: { message: 'Invalid post id.' } };
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(String(adminId))) {
+      return { status: 401, body: { message: 'Unauthorized' } };
+    }
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return { status: 404, body: { message: 'Post not found.' } };
+    }
+
+    if (post.postOwnerModel !== 'AdminAccount') {
+      return { status: 400, body: { message: 'Only manager posts can be updated by manager.' } };
+    }
+
+    // Only allow updating status to Draft, Posted, or Deleted
+    const requestedStatus = String(payload?.status || '').trim();
+    if (requestedStatus && !['Draft', 'Posted', 'Deleted'].includes(requestedStatus)) {
+      return { status: 400, body: { message: 'Invalid status value.' } };
+    }
+
+    // Special case: allow updating to Draft if no postImage is provided
+    if (requestedStatus === 'Draft' && Array.isArray(payload.postImage) && payload.postImage.length > 0) {
+      return { status: 400, body: { message: 'Draft posts cannot have postImage.' } };
+    }
+
+    // Multipart upload (preferred): uploaded files are in payload.files (from multer)
+    const files = Array.isArray(payload?.files) ? payload.files : [];
+
+    const uploadedUrls = [];
+    if (files.length > 0) {
       const { uploadImageBuffer } = require('../../utils/cloudinary/uploadImageBuffer');
 
       for (const file of files.slice(0, 6)) {
@@ -217,11 +322,17 @@ async function updateManagerOwnedPost(adminId, postId, payload) {
         const { url } = await uploadImageBuffer(file.buffer, { folder: 'san-sieu-toc/posts' });
         uploadedUrls.push(url);
       }
-
-      post.postImage = uploadedUrls;
     }
 
+    const finalUrls = [...uploadedUrls].slice(0, 6);
+
+    post.postName = payload.postName !== undefined ? String(payload.postName) : post.postName;
+    post.postContent = payload.postContent !== undefined ? String(payload.postContent) : post.postContent;
+    post.postImage = finalUrls.length > 0 ? finalUrls : post.postImage;
+    post.status = requestedStatus || post.status;
+
     await post.save();
+
     return { status: 200, body: post };
   } catch (error) {
     console.error('[manager.postService.updateManagerOwnedPost] Failed:', error.message);
@@ -231,7 +342,7 @@ async function updateManagerOwnedPost(adminId, postId, payload) {
 
 /**
  * softDeletePost
- * Soft deletes a post by setting status to "Deleted".
+ * Soft deletes a post (marks as deleted without removing from DB).
  *
  * @param {string} postId - Post _id
  * @returns {Promise<{status:number, body:any}>}
@@ -261,6 +372,7 @@ module.exports = {
   listPosts,
   createManagerPost,
   approveOwnerPost,
+  rejectOwnerPost,
   updateManagerOwnedPost,
   softDeletePost,
 };

@@ -1,0 +1,305 @@
+{
+  "owners": [
+    {
+      "_id": "79dfd69ddde202f2d7203f11",
+      "username": "owner_alpha",
+      "email": "owner_alpha@example.com",
+      "name": "Owner Alpha",
+      "phone": "0900000001",
+      "address": "District 1, HCMC",
+      "image": "",
+      "status": "Active",
+      "emailVerified": true
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f12",
+      "username": "owner_beta",
+      "email": "owner_beta@example.com",
+      "name": "Owner Beta",
+      "phone": "0900000002",
+      "address": "District 7, HCMC",
+      "image": "",
+      "status": "Active",
+      "emailVerified": true
+    }
+  ],
+  "customers": [
+    {
+      "_id": "79dfd69ddde202f2d7203f21",
+      "username": "customer_one",
+      "email": "customer_one@example.com",
+      "name": "Customer One",
+      "phone": "0910000001",
+      "address": "Thu Duc, HCMC",
+      "image": "",
+      "status": "Active",
+      "emailVerified": true
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f22",
+      "username": "customer_two",
+      "email": "customer_two@example.com",
+      "name": "Customer Two",
+      "phone": "0910000002",
+      "address": "Binh Thanh, HCMC",
+      "image": "",
+      "status": "Active",
+      "emailVerified": true
+    }
+  ],
+  "fields": [
+    {
+      "_id": "79dfd69ddde202f2d7203f31",
+      "ownerId": "79dfd69ddde202f2d7203f11",
+      "fieldType": "Sân 5 người",
+      "fieldName": "Alpha - Field A",
+      "price": 200000,
+      "hourlyPrice": 200000,
+      "slotDuration": 60,
+      "openingTime": "06:00",
+      "closingTime": "22:00",
+      "utilities": ["Parking", "Lights"],
+      "address": "12 Nguyen Hue, District 1",
+      "description": "Sample field for owner alpha",
+      "city": "HCMC",
+      "sizeKey": "5",
+      "status": "Active",
+      "image": []
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f32",
+      "ownerId": "79dfd69ddde202f2d7203f11",
+      "fieldType": "Sân 7 người",
+      "fieldName": "Alpha - Field B",
+      "price": 300000,
+      "hourlyPrice": 300000,
+      "slotDuration": 60,
+      "openingTime": "06:00",
+      "closingTime": "22:00",
+      "utilities": ["Parking", "Shower"],
+      "address": "88 Le Loi, District 1",
+      "description": "Sample field for owner alpha",
+      "city": "HCMC",
+      "sizeKey": "7",
+      "status": "Active",
+      "image": []
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f33",
+      "ownerId": "79dfd69ddde202f2d7203f12",
+      "fieldType": "Sân 5 người",
+      "fieldName": "Beta - Field A",
+      "price": 180000,
+      "hourlyPrice": 180000,
+      "slotDuration": 60,
+      "openingTime": "06:00",
+      "closingTime": "22:00",
+      "utilities": ["Lights"],
+      "address": "15 Nguyen Thi Thap, District 7",
+      "description": "Sample field for owner beta",
+      "city": "HCMC",
+      "sizeKey": "5",
+      "status": "Active",
+      "image": []
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f34",
+      "ownerId": "79dfd69ddde202f2d7203f12",
+      "fieldType": "Sân 11 người",
+      "fieldName": "Beta - Field B",
+      "price": 600000,
+      "hourlyPrice": 600000,
+      "slotDuration": 90,
+      "openingTime": "06:00",
+      "closingTime": "22:00",
+      "utilities": ["Parking", "Drinks"],
+      "address": "200 Nguyen Van Linh, District 7",
+      "description": "Sample field for owner beta",
+      "city": "HCMC",
+      "sizeKey": "11",
+      "status": "Active",
+      "image": []
+    }
+  ],
+  "bookings": [
+    {
+      "_id": "79dfd69ddde202f2d7203f41",
+      "customerId": "79dfd69ddde202f2d7203f21",
+      "totalPrice": 200000,
+      "statusPayment": "Completed",
+      "status": "Booked",
+      "createdAt": "2026-04-17T10:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f42",
+      "customerId": "79dfd69ddde202f2d7203f22",
+      "totalPrice": 300000,
+      "statusPayment": "Completed",
+      "status": "Booked",
+      "createdAt": "2026-04-17T14:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f43",
+      "customerId": "79dfd69ddde202f2d7203f21",
+      "totalPrice": 180000,
+      "statusPayment": "Completed",
+      "status": "Booked",
+      "createdAt": "2026-04-18T09:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f44",
+      "customerId": "79dfd69ddde202f2d7203f22",
+      "totalPrice": 600000,
+      "statusPayment": "Pending Refund",
+      "status": "Cancel",
+      "refundReason": "Weather",
+      "createdAt": "2026-04-18T17:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f45",
+      "customerId": "79dfd69ddde202f2d7203f21",
+      "totalPrice": 600000,
+      "statusPayment": "Completed",
+      "status": "Booked",
+      "createdAt": "2026-04-19T08:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f46",
+      "customerId": "79dfd69ddde202f2d7203f22",
+      "totalPrice": 200000,
+      "statusPayment": "Completed",
+      "status": "Booked",
+      "createdAt": "2026-04-19T15:00:00.000Z"
+    }
+  ],
+  "bookingDetails": [
+    {
+      "_id": "79dfd69ddde202f2d7203f51",
+      "bookingId": "79dfd69ddde202f2d7203f41",
+      "fieldId": "79dfd69ddde202f2d7203f31",
+      "fieldName": "Alpha - Field A",
+      "fieldImage": "",
+      "startTime": "2026-04-20T09:00:00.000Z",
+      "endTime": "2026-04-20T10:00:00.000Z",
+      "priceSnapShot": 200000,
+      "status": "End",
+      "createdAt": "2026-04-17T10:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f52",
+      "bookingId": "79dfd69ddde202f2d7203f42",
+      "fieldId": "79dfd69ddde202f2d7203f32",
+      "fieldName": "Alpha - Field B",
+      "fieldImage": "",
+      "startTime": "2026-04-21T13:00:00.000Z",
+      "endTime": "2026-04-21T14:00:00.000Z",
+      "priceSnapShot": 300000,
+      "status": "End",
+      "createdAt": "2026-04-17T14:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f53",
+      "bookingId": "79dfd69ddde202f2d7203f43",
+      "fieldId": "79dfd69ddde202f2d7203f33",
+      "fieldName": "Beta - Field A",
+      "fieldImage": "",
+      "startTime": "2026-04-22T08:00:00.000Z",
+      "endTime": "2026-04-22T09:00:00.000Z",
+      "priceSnapShot": 180000,
+      "status": "End",
+      "createdAt": "2026-04-18T09:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f54",
+      "bookingId": "79dfd69ddde202f2d7203f44",
+      "fieldId": "79dfd69ddde202f2d7203f34",
+      "fieldName": "Beta - Field B",
+      "fieldImage": "",
+      "startTime": "2026-04-23T16:00:00.000Z",
+      "endTime": "2026-04-23T17:30:00.000Z",
+      "priceSnapShot": 600000,
+      "status": "Cancel",
+      "createdAt": "2026-04-18T17:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f55",
+      "bookingId": "79dfd69ddde202f2d7203f45",
+      "fieldId": "79dfd69ddde202f2d7203f34",
+      "fieldName": "Beta - Field B",
+      "fieldImage": "",
+      "startTime": "2026-04-24T07:00:00.000Z",
+      "endTime": "2026-04-24T08:30:00.000Z",
+      "priceSnapShot": 600000,
+      "status": "Active",
+      "createdAt": "2026-04-19T08:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f56",
+      "bookingId": "79dfd69ddde202f2d7203f46",
+      "fieldId": "79dfd69ddde202f2d7203f31",
+      "fieldName": "Alpha - Field A",
+      "fieldImage": "",
+      "startTime": "2026-04-25T14:00:00.000Z",
+      "endTime": "2026-04-25T15:00:00.000Z",
+      "priceSnapShot": 200000,
+      "status": "Active",
+      "createdAt": "2026-04-19T15:00:00.000Z"
+    }
+  ],
+  "transactions": [
+    {
+      "_id": "79dfd69ddde202f2d7203f61",
+      "bookingId": "79dfd69ddde202f2d7203f41",
+      "type": "Field Payment",
+      "amount": 200000,
+      "description": "Payment for booking 79dfd69ddde202f2d7203f41",
+      "bookingType": "field",
+      "createdAt": "2026-04-17T10:05:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f62",
+      "bookingId": "79dfd69ddde202f2d7203f42",
+      "type": "Field Payment",
+      "amount": 300000,
+      "description": "Payment for booking 79dfd69ddde202f2d7203f42",
+      "bookingType": "field",
+      "createdAt": "2026-04-17T14:05:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f63",
+      "bookingId": "79dfd69ddde202f2d7203f43",
+      "type": "Field Payment",
+      "amount": 180000,
+      "description": "Payment for booking 79dfd69ddde202f2d7203f43",
+      "bookingType": "field",
+      "createdAt": "2026-04-18T09:05:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f64",
+      "bookingId": "79dfd69ddde202f2d7203f44",
+      "type": "Field Payment",
+      "amount": 600000,
+      "description": "Payment for booking 79dfd69ddde202f2d7203f44",
+      "bookingType": "field",
+      "createdAt": "2026-04-18T17:05:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f65",
+      "bookingId": "79dfd69ddde202f2d7203f44",
+      "type": "Refund",
+      "amount": 600000,
+      "description": "Refund for booking 79dfd69ddde202f2d7203f44",
+      "bookingType": "field",
+      "createdAt": "2026-04-19T09:00:00.000Z"
+    },
+    {
+      "_id": "79dfd69ddde202f2d7203f66",
+      "bookingId": "79dfd69ddde202f2d7203f45",
+      "type": "Field Payment",
+      "amount": 600000,
+      "description": "Payment for booking 79dfd69ddde202f2d7203f45",
+      "bookingType": "field",
+      "createdAt": "2026-04-19T08:05:00.000Z"
+    }
+  ]
+}

@@ -58,6 +58,13 @@ const AdminAccountSchema = new mongoose.Schema(
       default: 'Active',
     },
 
+    // Manager deletion scheduling (Admin requests deletion; executed after a grace period).
+    deletion: {
+      requestedAt: { type: Date },
+      scheduledAt: { type: Date },
+      requestedByAdminId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminAccount' },
+    },
+
     // Backward-compatible: existing admin accounts are considered verified.
     // New accounts created by Admin for Manager will set this to false.
     emailVerified: {
@@ -81,5 +88,7 @@ const AdminAccountSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+AdminAccountSchema.index({ 'deletion.scheduledAt': 1 });
 
 module.exports = mongoose.model('AdminAccount', AdminAccountSchema);

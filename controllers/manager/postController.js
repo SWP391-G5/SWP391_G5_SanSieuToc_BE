@@ -39,8 +39,21 @@ async function createPost(req, res) {
  * @param {object} res - Express response
  */
 async function approvePost(req, res) {
+  const managerId = req.user?.sub;
   const { id } = req.params;
-  const { status, body } = await postService.approveOwnerPost(id);
+  const { status, body } = await postService.approveOwnerPost(id, managerId);
+  return res.status(status).json(body);
+}
+
+/**
+ * rejectPost
+ * @param {object} req - Express request
+ * @param {object} res - Express response
+ */
+async function rejectPost(req, res) {
+  const managerId = req.user?.sub;
+  const { id } = req.params;
+  const { status, body } = await postService.rejectOwnerPost(id, managerId);
   return res.status(status).json(body);
 }
 
@@ -58,7 +71,8 @@ async function updatePost(req, res) {
     files: req.files,
   };
 
-  const { status, body } = await postService.updateManagerOwnedPost(adminId, id, payload);
+  // NOTE: postService signature is (postId, adminId, payload)
+  const { status, body } = await postService.updateManagerOwnedPost(id, adminId, payload);
   return res.status(status).json(body);
 }
 
@@ -68,8 +82,9 @@ async function updatePost(req, res) {
  * @param {object} res - Express response
  */
 async function deletePost(req, res) {
+  const managerId = req.user?.sub;
   const { id } = req.params;
-  const { status, body } = await postService.softDeletePost(id);
+  const { status, body } = await postService.softDeletePost(id, managerId);
   return res.status(status).json(body);
 }
 
@@ -77,6 +92,7 @@ module.exports = {
   listPosts,
   createPost,
   approvePost,
+  rejectPost,
   updatePost,
   deletePost,
 };
