@@ -43,7 +43,7 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
   console.log('=== deductWalletBalance called ===');
   console.log('userId:', userId, 'amount:', amount, 'bookingId:', bookingId, 'ownerId:', ownerId);
   let wallet = await Wallet.findOne({ walletOwnerId: userId, walletOwnerModel: 'UserAccount' });
-  
+
   if (!wallet) {
     wallet = await Wallet.create({
       walletOwnerId: userId,
@@ -77,7 +77,7 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
   if (ownerId) {
     console.log('==> Creating owner wallet transaction for ownerId:', ownerId);
     let ownerWallet = await Wallet.findOne({ walletOwnerId: ownerId, walletOwnerModel: 'Owner' });
-    
+
     if (!ownerWallet) {
       ownerWallet = await Wallet.create({
         walletOwnerId: ownerId,
@@ -98,7 +98,7 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
     const BookingDetail = require('../models/BookingDetail');
     const UserAccount = require('../models/UserAccount');
     const Field = require('../models/Field');
-    
+
     const booking = await Booking.findById(bookingId).lean();
     const customer = await UserAccount.findById(booking?.customerID).lean();
     const details = await BookingDetail.find({ bookingID: bookingId }).lean();
@@ -109,12 +109,12 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
     const fieldName = field?.fieldName || details[0]?.fieldName || 'Unknown';
     const managerDescription = `Hoa hồng 10% từ owner ${ownerName}`;
     const ownerDescription = `Doanh thu 90% từ sân ${fieldName}`;
-    
+
     console.log('==> owner:', owner?.name);
     console.log('==> owner.managerID:', owner?.managerID);
     console.log('==> managerId found:', managerId);
     console.log('==> managerAmount (10%):', managerAmount);
-    
+
     if (!managerId) {
       console.log('==> SKIP: No managerId - managerID is null/undefined');
     } else {
@@ -135,12 +135,12 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
           console.log('==> Updated manager wallet model to AdminAccount');
         }
       }
-      
+
       const managerBalanceBefore = managerWallet.balance;
       managerWallet.balance += managerAmount;
       await managerWallet.save();
       console.log('==> Manager wallet updated:', managerBalanceBefore, '->', managerWallet.balance);
-      
+
       await Transaction.create({
         bookingID: bookingId,
         fromWalletID: null,
@@ -154,7 +154,7 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
       });
       console.log('==> Transaction created for manager');
     }
-    
+
     await Transaction.create({
       bookingID: bookingId,
       fromWalletID: null,
@@ -177,7 +177,7 @@ async function deductWalletBalance(userId, amount, bookingId, ownerId) {
 async function getMyBookings(req, res) {
   try {
     const userId = req.user.sub || req.user.userId || req.user.id;
-    
+
     const bookings = await Booking.find({ customerID: userId })
       .sort({ createdAt: -1 })
       .lean();
@@ -200,7 +200,6 @@ async function getMyBookings(req, res) {
     })
       .sort({ createdAt: -1 })
       .lean();
-    
     const servicesByDetail = {};
     for (const sh of serviceHistories) {
       servicesByDetail[sh.bookingDetailID.toString()] = sh;
@@ -226,7 +225,7 @@ async function getMyBookings(req, res) {
 
     const result = bookings.map((b) => {
       const bDetails = detailsByBooking[b._id.toString()] || [];
-      
+
       const field = bDetails[0]?.fieldID || {};
       const fieldName = bDetails[0]?.fieldName || (typeof field === 'object' ? field.fieldName : '') || '';
       const fieldImage = bDetails[0]?.fieldImage || (typeof field === 'object' && field.image ? field.image[0] : '') || '';
@@ -241,8 +240,8 @@ async function getMyBookings(req, res) {
         }
         const startHour = new Date(d.startTime).getHours().toString().padStart(2, '0') + ':00';
         const endHour = new Date(d.endTime).getHours().toString().padStart(2, '0') + ':00';
-        groupedByDate[dateKey].push({ 
-          start: startHour, 
+        groupedByDate[dateKey].push({
+          start: startHour,
           end: endHour,
           id: d._id.toString(),
           status: d.status,
@@ -340,7 +339,7 @@ async function getBookedSlots(req, res) {
 
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
-    
+
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
@@ -403,7 +402,8 @@ async function createBooking(req, res) {
         return res.status(404).json({ message: 'Field not found' });
       }
       slotDuration = field.slotDuration || 60;
-      pricePerSlot = field.hourlyPrice || field.price || 0;
+      const hourlyPrice = field.hourlyPrice || field.price || 0;
+      pricePerSlot = Math.round(hourlyPrice * (slotDuration / 60));
     } else {
       pricePerSlot = parsePrice(req.body.fieldTotal) / (Array.isArray(timeSlots) ? timeSlots.length : 1);
     }
@@ -421,7 +421,7 @@ async function createBooking(req, res) {
       const [hours, minutes] = timeSlot.split(':').map(Number);
       const startTime = new Date(baseDate);
       startTime.setHours(hours, minutes || 0, 0, 0);
-      
+
       const endTime = new Date(startTime.getTime() + slotDuration * 60 * 1000);
 
       slotDetails.push({
@@ -460,20 +460,20 @@ async function createBooking(req, res) {
     if (paymentMethod === 'wallet' && totalPrice > 0) {
       console.log('Processing wallet payment...');
       let ownerId = field?.ownerID || null;
-      
+
       if (!ownerId && fieldId) {
         const Field = require('../models/Field');
         const fieldForOwner = await Field.findById(fieldId);
         ownerId = fieldForOwner?.ownerID || null;
         console.log('ownerId from refetch:', ownerId);
       }
-      
+
       console.log('=== PAYMENT DEBUG ===');
       console.log('fieldId:', fieldId);
       console.log('ownerId:', ownerId);
       console.log('totalPrice:', totalPrice);
       console.log('paymentMethod:', paymentMethod);
-      
+
       await deductWalletBalance(userId, totalPrice, booking._id, ownerId);
       booking.statusPayment = 'Completed';
       await booking.save();
@@ -553,7 +553,7 @@ async function cancelBooking(req, res) {
         const firstDetail = details[0] || {};
         const dateStr = firstDetail.startTime ? new Date(firstDetail.startTime).toLocaleDateString('vi-VN') : '';
         const timeStr = firstDetail.startTime ? new Date(firstDetail.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
-        
+
         await sendBookingCancellationEmail({
           to: user.email,
           name: user.name,
@@ -572,7 +572,7 @@ async function cancelBooking(req, res) {
       }
     }
 
-    res.json({ 
+    res.json({
       message: 'Cancellation request submitted. Please wait for owner to process refund.',
       booking: {
         id: booking._id,
@@ -746,13 +746,13 @@ async function getOwnerRefundRequests(req, res) {
     const mongoose = require('mongoose');
     const Booking = require('../models/Booking');
     const BookingDetail = require('../models/BookingDetail');
-    
+
     const ObjectId = mongoose.Types.ObjectId;
     const bookingIdToFind = "69e4793f9acecc873aa96561";
-    
+
     const detail = await BookingDetail.findOne({ bookingID: new ObjectId(bookingIdToFind) }).lean();
     console.log('BookingDetail for', bookingIdToFind, ':', detail);
-    
+
     const bookings = await Booking.find({ status: 'Cancel Request' }).lean();
     console.log('Total Cancel Request:', bookings.length);
     res.json({ count: bookings.length, refunds: bookings });
@@ -772,15 +772,15 @@ async function approveRefund(req, res) {
     const Transaction = require('../models/Transaction');
     const BookingDetail = require('../models/BookingDetail');
     const mongoose = require('mongoose');
-    
+
     const booking = await Booking.findById(bookingId);
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
     }
-    
+
     const refundAmount = Math.floor(booking.totalPrice * 0.8);
     const customerId = booking.customerID;
-    
+
     let customerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(customerId), walletOwnerModel: 'UserAccount' });
     if (!customerWallet) {
       customerWallet = await Wallet.create({
@@ -789,11 +789,11 @@ async function approveRefund(req, res) {
         balance: 0,
       });
     }
-    
+
     const customerBalanceBefore = customerWallet.balance;
     customerWallet.balance += refundAmount;
     await customerWallet.save();
-    
+
     await Transaction.create({
       bookingID: bookingId,
       fromWalletID: null,
@@ -805,7 +805,7 @@ async function approveRefund(req, res) {
       description: `Refund 80% for cancelled booking`,
       bookingType: 'field',
     });
-    
+
     let ownerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(ownerId), walletOwnerModel: 'Owner' });
     if (!ownerWallet) {
       ownerWallet = await Wallet.create({
@@ -814,11 +814,11 @@ async function approveRefund(req, res) {
         balance: 0,
       });
     }
-    
+
     const ownerBalanceBefore = ownerWallet.balance;
     ownerWallet.balance -= refundAmount;
     await ownerWallet.save();
-    
+
     await Transaction.create({
       bookingID: bookingId,
       fromWalletID: ownerWallet._id,
@@ -830,11 +830,11 @@ async function approveRefund(req, res) {
       description: `Refund 80% for cancelled booking`,
       bookingType: 'field',
     });
-    
+
     booking.status = 'Cancel';
     booking.statusPayment = 'Refunded';
     await booking.save();
-    
+
     const customer = await UserAccount.findById(customerId).lean();
     if (customer && isEmailConfigured()) {
       try {
@@ -848,7 +848,7 @@ async function approveRefund(req, res) {
         console.log('Failed to send refund email:', e.message);
       }
     }
-    
+
     res.json({ success: true, message: `Refund ${refundAmount} VND approved (80%)`, ownerBalance: ownerWallet.balance });
   } catch (err) {
     console.error('approveRefund error:', err);

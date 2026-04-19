@@ -19,6 +19,7 @@ app.use(cors({
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+<<<<<<< HEAD
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('Connected to MongoDB');
@@ -30,6 +31,33 @@ mongoose.connect(process.env.MONGO_URI)
     startManagerDeletionJob();
   })
   .catch(err => console.error('MongoDB connection error:', err));
+=======
+const mongoUri = process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error(
+    'MONGO_URI is not set. Create a .env file next to server.js with MONGO_URI=<your MongoDB connection string> and restart the server.'
+  );
+} else {
+  // DNS Fix for MongoDB Atlas on certain Windows environments
+  const dns = require('dns');
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+  } catch (e) {
+    console.warn('Could not set custom DNS servers:', e.message);
+  }
+
+  mongoose
+    .connect(mongoUri)
+    .then(() => {
+      console.log('Connected to MongoDB Atlas');
+
+      // Start cron jobs after DB connection
+      const { startAutoCompleteJob } = require('./utils/cronJobs');
+      startAutoCompleteJob();
+    })
+    .catch((err) => console.error('MongoDB connection error:', err));
+}
+>>>>>>> 8d6e8d6778d941815099210124c9018119f55449
 
 // Load all models
 require('./models');
@@ -38,11 +66,11 @@ const routes = require('./routes');
 app.use(routes);
 
 app.get('/', async (req, res) => {
-    try {
-        res.send({message: 'Welcome to San Sieu Toc API!'});
-    } catch (error) {
-        res.send({error: error.message});
-    }
+  try {
+    res.send({ message: 'Welcome to San Sieu Toc API!' });
+  } catch (error) {
+    res.send({ error: error.message });
+  }
 });
 
 // Global error handler (JSON)
@@ -55,10 +83,10 @@ const PORT = process.env.PORT || 9999;
 // ============================================
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  
+
   const status = err.status || 500;
   const message = err.message || 'Internal Server Error';
-  
+
   res.status(status).json({
     success: false,
     message: message,

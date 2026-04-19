@@ -1,6 +1,6 @@
 const { getOwnerWallet, getOwnerTransactions, getOwnerRevenueSummary } = require('../../services/owner/walletService');
 const Wallet = require('../../models/Wallet');
-const WithdrawRequest = require('../../models/WithdrawRequest');
+const Transaction = require('../../models/Transaction');
 const asyncHandler = require('../../middlewares/asyncHandler');
 
 function formatVnd(amount) {
@@ -59,7 +59,6 @@ exports.getRevenueSummary = asyncHandler(async (req, res) => {
 exports.createWithdrawRequest = asyncHandler(async (req, res) => {
   const ownerId = req.user.sub || req.user.id || req.user._id;
   const { amount, bankName, accountNumber, accountName } = req.body;
-  const Transaction = require('../../models/Transaction');
 
   const withdrawAmount = Number(amount);
   const MIN_AMOUNT = 100000;
@@ -93,15 +92,11 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
     balanceAfter: wallet.balance,
     description: `Rút tiền về ${bankName} - STK: ${accountNumber}`,
     bookingType: 'field',
-  });
-
-  await WithdrawRequest.create({
     ownerID: ownerId,
-    amount: withdrawAmount,
     bankName,
     accountNumber,
     accountName,
-    status: 'Completed',
+    withdrawStatus: 'Completed',
   });
 
   res.json({
