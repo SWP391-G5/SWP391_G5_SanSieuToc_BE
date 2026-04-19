@@ -12,6 +12,37 @@ const UserAccount = require('../../models/UserAccount');
 
 const ALLOWED_STATUSES = ['Draft', 'Pending', 'Posted', 'Rejected', 'Deleted'];
 
+// Normalize tags from request into a unique trimmed array
+function normalizeTags(input) {
+  if (!input) return [];
+
+  let raw = [];
+  if (Array.isArray(input)) raw = input;
+  else if (typeof input === 'string') {
+    const s = input.trim();
+    if (!s) return [];
+
+    // accept JSON array string, comma-separated, or single
+    try {
+      const parsed = JSON.parse(s);
+      raw = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      raw = s.includes(',') ? s.split(',') : [s];
+    }
+  } else {
+    raw = [input];
+  }
+
+  const normalized = raw
+    .flat()
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .slice(0, 10);
+
+  // unique
+  return Array.from(new Set(normalized));
+}
+
 /**
  * parsePaging
  * Parses paging params from request query.
@@ -55,6 +86,13 @@ function buildPostListFilter(query) {
 
   if (query?.ownerId && mongoose.Types.ObjectId.isValid(String(query.ownerId))) {
     filter.postOwnerID = String(query.ownerId);
+  }
+
+  // Tag filter: ?tag=Tips or ?tags=Tips,ThongBao or ?tags=["Tips","ThongBao"]
+  const tagList = normalizeTags(query?.tag || query?.tags);
+  if (tagList.length > 0) {
+    // match any of the requested tags
+    filter.postTags = { $in: tagList };
   }
 
   if (query?.q) {
@@ -104,13 +142,15 @@ async function listPosts(query) {
  * Creates a new post by Manager/Admin. Status is always "Posted".
  *
  * @param {string} adminId - AdminAccount _id
- * @param {{postName:string, postContent?:string, postImage?:string[]}} payload - post input
+ * @param {{postName:string, postContent?:string, postImage?:string[], postTags?:string[]}} payload - post input
  * @returns {Promise<any>} created post
  */
 async function createManagerPost(adminId, payload) {
   try {
     const postName = String(payload?.postName || '').trim();
     const postContent = String(payload?.postContent || '').trim();
+
+    const postTags = normalizeTags(payload?.postTags || payload?.tags || payload?.tag);
 
     // accept pre-uploaded urls (e.g. draft images stored as urls)
     let providedUrls = [];
@@ -160,6 +200,7 @@ async function createManagerPost(adminId, payload) {
       postName,
       postContent,
       postImage: finalUrls,
+      postTags,
       status,
     });
 
@@ -200,14 +241,26 @@ async function approveOwnerPost(postId, managerId) {
       return { status: 400, body: { message: 'Only Pending posts can be approved.' } };
     }
 
-    // Authorization: only the assigned Manager can approve this owner's post
+    // Authorization:
+    // - Owner posts: only the assigned Manager can approve.
+    // - Customer posts: global moderation (any Manager/Admin can approve).
     const owner = await UserAccount.findById(post.postOwnerID).select('managerID roleID').lean();
     if (!owner) {
       return { status: 400, body: { message: 'Post owner not found.' } };
     }
 
-    if (!owner.managerID || String(owner.managerID) !== String(managerId)) {
-      return { status: 403, body: { message: 'You are not authorized to approve posts for this owner.' } };
+    let roleName = '';
+    if (owner.roleID && mongoose.Types.ObjectId.isValid(String(owner.roleID))) {
+      const Role = require('../../models/Role');
+      const roleDoc = await Role.findById(owner.roleID).select('name').lean();
+      roleName = String(roleDoc?.name || '').trim();
+    }
+
+    const isCustomer = roleName.toLowerCase() === 'customer';
+    if (!isCustomer) {
+      if (!owner.managerID || String(owner.managerID) !== String(managerId)) {
+        return { status: 403, body: { message: 'You are not authorized to approve posts for this owner.' } };
+      }
     }
 
     post.status = 'Posted';
@@ -251,14 +304,26 @@ async function rejectOwnerPost(postId, managerId) {
       return { status: 400, body: { message: 'Only Pending posts can be rejected.' } };
     }
 
-    // Authorization: only the assigned Manager can reject this owner's post
-    const owner = await UserAccount.findById(post.postOwnerID).select('managerID').lean();
+    // Authorization:
+    // - Owner posts: only the assigned Manager can reject.
+    // - Customer posts: global moderation (any Manager/Admin can reject).
+    const owner = await UserAccount.findById(post.postOwnerID).select('managerID roleID').lean();
     if (!owner) {
       return { status: 400, body: { message: 'Post owner not found.' } };
     }
 
-    if (!owner.managerID || String(owner.managerID) !== String(managerId)) {
-      return { status: 403, body: { message: 'You are not authorized to reject posts for this owner.' } };
+    let roleName = '';
+    if (owner.roleID && mongoose.Types.ObjectId.isValid(String(owner.roleID))) {
+      const Role = require('../../models/Role');
+      const roleDoc = await Role.findById(owner.roleID).select('name').lean();
+      roleName = String(roleDoc?.name || '').trim();
+    }
+
+    const isCustomer = roleName.toLowerCase() === 'customer';
+    if (!isCustomer) {
+      if (!owner.managerID || String(owner.managerID) !== String(managerId)) {
+        return { status: 403, body: { message: 'You are not authorized to reject posts for this owner.' } };
+      }
     }
 
     post.status = 'Rejected';
@@ -329,6 +394,9 @@ async function updateManagerOwnedPost(postId, adminId, payload) {
     post.postName = payload.postName !== undefined ? String(payload.postName) : post.postName;
     post.postContent = payload.postContent !== undefined ? String(payload.postContent) : post.postContent;
     post.postImage = finalUrls.length > 0 ? finalUrls : post.postImage;
+    if ((payload?.postTags ?? payload?.tags ?? payload?.tag) !== undefined) {
+      post.postTags = nextTags;
+    }
     post.status = requestedStatus || post.status;
 
     await post.save();
