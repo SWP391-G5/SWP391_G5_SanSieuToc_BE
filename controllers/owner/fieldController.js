@@ -85,6 +85,7 @@ async function createField(req, res) {
       fieldType,
       address,
       description,
+      hourlyPrice,
       slotDuration,
       openingTime,
       closingTime,
@@ -99,6 +100,13 @@ async function createField(req, res) {
       return res.status(400).json({ message: 'Loại sân là bắt buộc.' });
    }
 
+   if (hourlyPrice !== undefined) {
+      const hourlyPriceNumber = Number(hourlyPrice);
+      if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
+         return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
+      }
+   }
+
    const imageUrls = await processImages(image);
 
    const field = await Field.create({
@@ -107,6 +115,8 @@ async function createField(req, res) {
       fieldType: String(fieldType).trim(),
       address: address ? String(address).trim() : '',
       description: description ? String(description).trim() : '',
+      hourlyPrice: hourlyPrice !== undefined ? Number(hourlyPrice) : 0,
+      price: hourlyPrice !== undefined ? Number(hourlyPrice) : 0,
       slotDuration: slotDuration ? Number(slotDuration) : 60,
       openingTime: openingTime ? String(openingTime).trim() : '06:00',
       closingTime: closingTime ? String(closingTime).trim() : '22:00',
@@ -136,6 +146,7 @@ async function updateField(req, res) {
       fieldType,
       address,
       description,
+      hourlyPrice,
       slotDuration,
       openingTime,
       closingTime,
@@ -143,10 +154,22 @@ async function updateField(req, res) {
       image,
    } = req.body || {};
 
+   if (hourlyPrice !== undefined) {
+      const hourlyPriceNumber = Number(hourlyPrice);
+      if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
+         return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
+      }
+   }
+
    if (fieldName !== undefined) field.fieldName = String(fieldName).trim();
    if (fieldType !== undefined) field.fieldType = String(fieldType).trim();
    if (address !== undefined) field.address = String(address).trim();
    if (description !== undefined) field.description = String(description).trim();
+   if (hourlyPrice !== undefined) {
+      const hourlyPriceNumber = Number(hourlyPrice);
+      field.hourlyPrice = hourlyPriceNumber;
+      field.price = hourlyPriceNumber;
+   }
    if (slotDuration !== undefined) field.slotDuration = Number(slotDuration);
    if (openingTime !== undefined) field.openingTime = String(openingTime).trim();
    if (closingTime !== undefined) field.closingTime = String(closingTime).trim();
