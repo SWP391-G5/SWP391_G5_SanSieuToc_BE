@@ -79,7 +79,7 @@ async function getMyServiceHistory(req, res) {
     
     const serviceHistories = await BookingServiceHistory.find({ 
       bookingDetailID: { $in: detailIds }
-    }).populate('bookingDetailID', 'fieldName startTime').lean();
+    }).populate('bookingDetailID', 'fieldName fieldAddress startTime').lean();
     console.log('Found serviceHistories:', serviceHistories.length);
     
     const result = serviceHistories.map(sh => {
@@ -88,10 +88,13 @@ async function getMyServiceHistory(req, res) {
       return {
         id: sh._id,
         fieldName: detail?.fieldName || '',
+        fieldAddress: detail?.fieldAddress || '',
         date: detail?.startTime ? new Date(detail.startTime).toISOString().split('T')[0] : '',
+        time: detail?.startTime ? new Date(detail.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '',
         services: sh.service || [],
         totalPrice: sh.totalPriceSnapShot || 0,
-        status: booking?.status || ''
+        status: booking?.status || '',
+        statusPayment: booking?.statusPayment || ''
       };
     });
     
@@ -129,8 +132,6 @@ async function bookServices(req, res) {
     if (booking.status === 'Cancel') {
       return res.status(400).json({ message: 'Cannot add services to cancelled booking' });
     }
-    
-    let serviceHistory = await BookingServiceHistory.findOne({ bookingDetailID: bookingDetailId });
     
     const newServices = services.map(s => ({
       serviceId: s.serviceId,
@@ -172,20 +173,47 @@ async function bookServices(req, res) {
         description: `Service payment for ${bookingDetail.fieldName}`,
         bookingType: 'service',
       });
+
+      const Field = require('../models/Field');
+      const field = await Field.findById(bookingDetail.fieldID).lean();
+      if (field?.ownerID) {
+        const owner = await UserAccount.findById(field.ownerID).lean();
+        const ownerName = owner?.name || owner?.username || 'Unknown Owner';
+        
+        let ownerWallet = await Wallet.findOne({ walletOwnerId: field.ownerID, walletOwnerModel: 'Owner' });
+        
+        if (!ownerWallet) {
+          ownerWallet = await Wallet.create({
+            walletOwnerId: field.ownerID,
+            walletOwnerModel: 'Owner',
+            balance: 0,
+          });
+        }
+        
+        const ownerBalanceBefore = ownerWallet.balance;
+        ownerWallet.balance += finalTotal;
+        await ownerWallet.save();
+        
+        await Transaction.create({
+          bookingID: booking._id,
+          fromWalletID: null,
+          toWalletID: ownerWallet._id,
+          type: 'Service Payment',
+          amount: finalTotal,
+          balanceBefore: ownerBalanceBefore,
+          balanceAfter: ownerWallet.balance,
+          description: `Doanh thu dịch vụ từ ${bookingDetail.fieldName}`,
+          bookingType: 'service',
+        });
+      }
     }
     
-    if (serviceHistory) {
-      serviceHistory.service = newServices;
-      serviceHistory.totalPriceSnapShot = finalTotal;
-      await serviceHistory.save();
-    } else {
-      serviceHistory = await BookingServiceHistory.create({
-        bookingDetailID: bookingDetailId,
-        serviceID: newServices[0]?.serviceId,
-        totalPriceSnapShot: finalTotal,
-        service: newServices,
-      });
-    }
+    serviceHistory = await BookingServiceHistory.create({
+      bookingDetailID: bookingDetailId,
+      serviceID: newServices[0]?.serviceId,
+      totalPriceSnapShot: finalTotal,
+      service: newServices,
+    });
     
     res.status(201).json({
       success: true,
