@@ -14,6 +14,7 @@ const Post = require('./Post');
 const Voucher = require('./Voucher');
 const Report = require('./Report');
 const Privacy = require('./Privacy');
+const Wishlist = require('./Wishlist');
 
 module.exports = {
   Role,
@@ -32,4 +33,5 @@ module.exports = {
   Voucher,
   Report,
   Privacy,
+  Wishlist,
 };

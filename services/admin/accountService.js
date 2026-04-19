@@ -25,6 +25,12 @@ const {
 } = require('../../utils/validators');
 
 function normalizeAdminAccount(accountDoc) {
+  const deletion = accountDoc.deletion?.scheduledAt
+    ? {
+        requestedAt: accountDoc.deletion?.requestedAt,
+        scheduledAt: accountDoc.deletion?.scheduledAt,
+      }
+    : null;
   return {
     id: accountDoc._id,
     username: accountDoc.username,
@@ -35,6 +41,7 @@ function normalizeAdminAccount(accountDoc) {
     image: accountDoc.image || '',
     role: accountDoc.roleID?.name,
     status: accountDoc.status,
+    deletion,
     createdAt: accountDoc.createdAt,
     updatedAt: accountDoc.updatedAt,
   };
@@ -327,6 +334,18 @@ async function deleteManager(id, options = {}) {
     return { status: 200, body: { message: 'Tài khoản đã bị xóa.', item: normalizeAdminAccount(account) } };
   }
 
+  if (!isEmailConfigured()) {
+    return { status: 500, body: { message: 'Chức năng gửi email chưa được cấu hình.' } };
+  }
+
+  // If already scheduled, do not spam email or re-schedule.
+  if (account.deletion?.scheduledAt) {
+    return {
+      status: 200,
+      body: { message: 'Tài khoản đã được lên lịch xóa.', item: normalizeAdminAccount(account) },
+    };
+  }
+
   // Reassign owners to another active manager before deleting.
   const ownerRoleId = await getRoleIdByName('Owner');
   const ownersCount = await UserAccount.countDocuments({ roleID: ownerRoleId, managerID: account._id });
@@ -347,41 +366,39 @@ async function deleteManager(id, options = {}) {
     );
   }
 
-  // Transfer deleted manager wallet balance to Admin wallet.
-  const receiverAdminId = await resolveReceiverAdminId(options?.actorAdminId);
-  if (!receiverAdminId) {
-    return { status: 500, body: { message: 'Không tìm thấy tài khoản Admin để nhận ví.' } };
+  const now = Date.now();
+  const scheduledAt = new Date(now + 3 * 24 * 60 * 60 * 1000);
+
+  let adminEmail;
+  if (mongoose.isValidObjectId(options?.actorAdminId)) {
+    const adminRoleId = await getRoleIdByName('Admin');
+    const admin = await AdminAccount.findOne({ _id: options.actorAdminId, roleID: adminRoleId }).select('email');
+    adminEmail = admin?.email;
   }
 
-  const transfer = await transferAdminWalletBalance({
-    fromAdminAccountId: account._id,
-    toAdminAccountId: receiverAdminId,
-    reason: `Transfer balance to admin due to manager deletion (${String(account.username || account.email || account._id)})`,
-  });
-
-  if (!transfer.ok) {
-    return { status: 500, body: { message: `Chuyển ví thất bại: ${transfer.message}` } };
+  // Send email first; only schedule if email sending succeeds.
+  try {
+    await sendManagerDeletionNoticeEmail({
+      to: account.email,
+      name: account.name,
+      scheduledAt,
+      adminEmail,
+    });
+  } catch {
+    return { status: 500, body: { message: 'Gửi email thông báo xóa tài khoản thất bại. Vui lòng thử lại sau.' } };
   }
 
-  // Notify the manager about deletion + wallet transfer (best-effort).
-  if (isEmailConfigured() && account.email) {
-    try {
-      const adminReceiver = await AdminAccount.findById(receiverAdminId).select('email name username');
-      await sendManagerDeletionNoticeEmail({
-        to: account.email,
-        name: account.name,
-        amount: transfer.moved || 0,
-        adminEmail: adminReceiver?.email || undefined,
-      });
-    } catch {
-      // best-effort: do not block deletion if email sending fails
-    }
-  }
-
-  account.status = 'Deleted';
+  account.deletion = {
+    requestedAt: new Date(now),
+    scheduledAt,
+    requestedByAdminId: mongoose.isValidObjectId(options?.actorAdminId) ? options.actorAdminId : undefined,
+  };
   await account.save();
 
-  return { status: 200, body: { message: 'Đã xóa tài khoản (soft delete).', item: normalizeAdminAccount(account) } };
+  return {
+    status: 200,
+    body: { message: 'Đã gửi email. Tài khoản sẽ được xóa sau 3 ngày.', item: normalizeAdminAccount(account) },
+  };
 }
 
 async function restoreManager(id) {
@@ -391,14 +408,27 @@ async function restoreManager(id) {
   const account = await AdminAccount.findOne({ _id: id, roleID: roleId }).populate('roleID');
   if (!account) return { status: 404, body: { message: 'Không tìm thấy tài khoản Manager.' } };
 
-  if (account.status !== 'Deleted') {
-    return { status: 200, body: { message: 'Tài khoản không ở trạng thái Deleted.', item: normalizeAdminAccount(account) } };
+  const hadSchedule = Boolean(account.deletion?.scheduledAt);
+  const wasDeleted = account.status === 'Deleted';
+
+  if (!hadSchedule && !wasDeleted) {
+    return {
+      status: 200,
+      body: { message: 'Tài khoản không ở trạng thái cần khôi phục.', item: normalizeAdminAccount(account) },
+    };
   }
 
-  account.status = 'Active';
+  account.deletion = undefined;
+  if (wasDeleted) account.status = 'Active';
   await account.save();
 
-  return { status: 200, body: { message: 'Đã khôi phục tài khoản Manager.', item: normalizeAdminAccount(account) } };
+  return {
+    status: 200,
+    body: {
+      message: wasDeleted ? 'Đã khôi phục tài khoản Manager.' : 'Đã hủy lịch xóa tài khoản Manager.',
+      item: normalizeAdminAccount(account),
+    },
+  };
 }
 
 async function listOwners() {

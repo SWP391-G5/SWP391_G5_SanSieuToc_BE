@@ -336,18 +336,20 @@ function formatVnd(amount) {
   return new Intl.NumberFormat('vi-VN').format(Number(amount || 0));
 }
 
-async function sendManagerDeletionNoticeEmail({ to, name, amount, adminEmail }) {
+async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmail }) {
   const user = process.env.EMAIL_USER;
   const subject = 'San Sieu Toc - Thong bao tai khoan Manager';
   const safeName = name || 'ban';
-  const safeAmount = formatVnd(amount);
   const safeAdminEmail = adminEmail || user;
+  const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
 
   const text = [
     `Xin chao ${safeName},`,
     '',
-    'Tai khoan Manager cua ban da bi xoa (soft delete) tren he thong San Sieu Toc.',
-    `So du trong vi (neu co) da duoc chuyen ve vi Admin: ${safeAmount} VND.`,
+    'He thong nhan duoc yeu cau xoa tai khoan Manager cua ban.',
+    'Ban co 3 ngay de rut het so du trong vi (neu co) truoc khi tai khoan bi xoa.',
+    '',
+    `Thoi gian du kien xoa tai khoan: ${safeDate}`,
     '',
     `Neu ban co thac mac, vui long lien he Admin qua email: ${safeAdminEmail}`, 
     '',
