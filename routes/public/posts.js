@@ -39,8 +39,9 @@ function toExcerpt(content, maxLength = 140) {
   return `${text.slice(0, maxLength).trimEnd()}...`;
 }
 
-function toPostTag(ownerModel) {
-  return ownerModel === 'AdminAccount' ? 'Announcement' : 'Community';
+function toPostTag(doc) {
+  if (doc?.postTag) return doc.postTag;
+  return doc?.postOwnerModel === 'AdminAccount' ? 'Announcement' : 'Community';
 }
 
 function toPostDto(doc) {
@@ -64,7 +65,7 @@ function toPostDto(doc) {
     excerpt: toExcerpt(doc?.postContent),
     image: images[0] || '',
     imageAlt: 'Post image',
-    tag: toPostTag(doc?.postOwnerModel),
+    tag: toPostTag(doc),
     author: toOwnerName(ownerDoc, doc?.postOwnerModel),
     authorImage: ownerDoc?.image || '',
   };
