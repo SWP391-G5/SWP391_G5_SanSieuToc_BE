@@ -5,6 +5,8 @@ const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const UserAccount = require('../models/UserAccount');
 const BookingServiceHistory = require('../models/BookingServiceHistory');
+const Feedback = require('../models/Feedback');
+const mongoose = require('mongoose');
 const { isEmailConfigured, sendBookingConfirmationEmail, sendBookingCancellationEmail, sendWalletRefundEmail } = require('../utils/mailer');
 
 function parsePrice(priceText) {
@@ -15,6 +17,26 @@ function parsePrice(priceText) {
 
 function formatVnd(amount) {
   return new Intl.NumberFormat('vi-VN').format(amount || 0);
+}
+
+function toIdString(value) {
+  if (!value) return '';
+  if (typeof value === 'object') {
+    return String(value._id || value.id || '');
+  }
+  return String(value);
+}
+
+function isDetailEnded(detail) {
+  const statusKey = String(detail?.status || '').trim().toLowerCase();
+  if (statusKey === 'end') return true;
+
+  const endAt = detail?.endTime ? new Date(detail.endTime).getTime() : NaN;
+  if (Number.isFinite(endAt)) {
+    return Date.now() > endAt;
+  }
+
+  return false;
 }
 
 async function deductWalletBalance(userId, amount, bookingId, ownerId) {
@@ -172,10 +194,23 @@ async function getMyBookings(req, res) {
 
     const detailIds = details.map(d => d._id);
     const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
-
+    const feedbackRows = await Feedback.find({
+      bookingDetailID: { $in: detailIds },
+      isDeleted: false,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
     const servicesByDetail = {};
     for (const sh of serviceHistories) {
       servicesByDetail[sh.bookingDetailID.toString()] = sh;
+    }
+
+    const feedbackByDetail = {};
+    for (const fb of feedbackRows) {
+      const key = fb.bookingDetailID.toString();
+      if (!feedbackByDetail[key]) {
+        feedbackByDetail[key] = fb;
+      }
     }
 
     const detailsByBooking = {};
@@ -184,6 +219,7 @@ async function getMyBookings(req, res) {
         detailsByBooking[d.bookingID.toString()] = [];
       }
       d.services = servicesByDetail[d._id.toString()] || null;
+      d.feedback = feedbackByDetail[d._id.toString()] || null;
       detailsByBooking[d.bookingID.toString()].push(d);
     }
 
@@ -207,7 +243,9 @@ async function getMyBookings(req, res) {
         groupedByDate[dateKey].push({
           start: startHour,
           end: endHour,
-          id: d._id.toString()
+          id: d._id.toString(),
+          status: d.status,
+          hasFeedback: !!d.feedback,
         });
       }
 
@@ -243,6 +281,9 @@ async function getMyBookings(req, res) {
         }
       }
       const uniqueServicesList = Array.from(uniqueServicesMap.values());
+      const hasFeedback = bDetails.some((d) => !!d.feedback);
+      const isPaid = String(b?.statusPayment || '').trim() === 'Completed';
+      const canFeedback = isPaid && bDetails.some((d) => isDetailEnded(d) && !d.feedback);
 
       const statusMap = {
         Booked: 'Confirmed',
@@ -271,6 +312,8 @@ async function getMyBookings(req, res) {
         fieldTotal: b.fieldTotal || 0,
         services: uniqueServicesList,
         servicesTotal: servicesTotal,
+        hasFeedback,
+        canFeedback,
 
         status: statusMap[b.status] || b.status,
         statusPayment: paymentStatusMap[b.statusPayment] || b.statusPayment,
@@ -543,6 +586,159 @@ async function cancelBooking(req, res) {
   }
 }
 
+async function getFeedbackEligibility(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const { bookingId } = req.params;
+
+    if (!mongoose.isValidObjectId(String(bookingId))) {
+      return res.status(400).json({ message: 'Invalid bookingId.' });
+    }
+
+    const booking = await Booking.findOne({ _id: bookingId, customerID: userId }).lean();
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found.' });
+    }
+
+    const isPaid = String(booking?.statusPayment || '').trim() === 'Completed';
+
+    const details = await BookingDetail.find({ bookingID: bookingId }).sort({ startTime: 1 }).lean();
+    if (!details.length) {
+      return res.json({
+        item: {
+          bookingId: String(booking._id),
+          fieldId: '',
+          fieldName: '',
+          isPaid,
+          canSubmit: false,
+          eligibleSlots: [],
+          submittedSlots: [],
+        },
+      });
+    }
+
+    const detailIds = details.map((d) => d._id);
+    const feedbackRows = await Feedback.find({
+      bookingDetailID: { $in: detailIds },
+      isDeleted: false,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const feedbackByDetail = new Map();
+    for (const row of feedbackRows) {
+      const key = String(row.bookingDetailID);
+      if (!feedbackByDetail.has(key)) {
+        feedbackByDetail.set(key, row);
+      }
+    }
+
+    const slots = details.map((d) => {
+      const key = String(d._id);
+      const feedback = feedbackByDetail.get(key) || null;
+      const isEnded = isDetailEnded(d);
+
+      return {
+        id: key,
+        startTime: d.startTime,
+        endTime: d.endTime,
+        status: d.status,
+        isEnded,
+        hasFeedback: !!feedback,
+        feedback: feedback
+          ? {
+              id: String(feedback._id),
+              rate: feedback.rate,
+              content: feedback.content || '',
+              createdAt: feedback.createdAt,
+            }
+          : null,
+      };
+    });
+
+    const eligibleSlots = slots.filter((s) => s.isEnded && !s.hasFeedback);
+    const submittedSlots = slots.filter((s) => s.isEnded && s.hasFeedback);
+    const firstDetail = details[0] || {};
+
+    return res.json({
+      item: {
+        bookingId: String(booking._id),
+        fieldId: toIdString(firstDetail.fieldID),
+        fieldName: firstDetail.fieldName || '',
+        isPaid,
+        canSubmit: isPaid && eligibleSlots.length > 0,
+        eligibleSlots,
+        submittedSlots,
+      },
+    });
+  } catch (err) {
+    console.error('getFeedbackEligibility error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
+async function createFeedback(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const bookingDetailId = String(req.body?.bookingDetailId || '').trim();
+    const rate = Number(req.body?.rate);
+    const content = String(req.body?.content || '').trim();
+
+    if (!mongoose.isValidObjectId(bookingDetailId)) {
+      return res.status(400).json({ message: 'Invalid bookingDetailId.' });
+    }
+
+    if (!Number.isInteger(rate) || rate < 1 || rate > 5) {
+      return res.status(400).json({ message: 'Rate must be an integer between 1 and 5.' });
+    }
+
+    const detail = await BookingDetail.findById(bookingDetailId).lean();
+    if (!detail) {
+      return res.status(404).json({ message: 'Booking detail not found.' });
+    }
+
+    const booking = await Booking.findOne({ _id: detail.bookingID, customerID: userId }).lean();
+    if (!booking) {
+      return res.status(403).json({ message: 'You cannot feedback this booking detail.' });
+    }
+
+    if (String(booking?.statusPayment || '').trim() !== 'Completed') {
+      return res.status(409).json({ message: 'You can only feedback paid bookings.' });
+    }
+
+    if (!isDetailEnded(detail)) {
+      return res.status(409).json({ message: 'You can only feedback after the slot has ended.' });
+    }
+
+    const existing = await Feedback.findOne({ bookingDetailID: detail._id, isDeleted: false }).lean();
+    if (existing) {
+      return res.status(409).json({ message: 'Feedback already submitted for this slot.' });
+    }
+
+    const created = await Feedback.create({
+      bookingDetailID: detail._id,
+      rate,
+      content,
+    });
+
+    return res.status(201).json({
+      message: 'Feedback submitted successfully.',
+      item: {
+        id: String(created._id),
+        bookingDetailId: String(detail._id),
+        fieldId: toIdString(detail.fieldID),
+        fieldName: detail.fieldName || '',
+        rate: created.rate,
+        content: created.content || '',
+        createdAt: created.createdAt,
+      },
+    });
+  } catch (err) {
+    console.error('createFeedback error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 async function getOwnerRefundRequests(req, res) {
   try {
     const ownerId = req.user.sub || req.user.id || req.user._id;
@@ -682,6 +878,8 @@ module.exports = {
   getBookedSlots,
   createBooking,
   cancelBooking,
+  getFeedbackEligibility,
+  createFeedback,
   getOwnerRefundRequests,
   approveRefund,
   rejectRefund,

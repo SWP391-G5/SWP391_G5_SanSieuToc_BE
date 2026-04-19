@@ -16,6 +16,7 @@ const PostSchema = new mongoose.Schema(
     },
     postName: { type: String, required: true, trim: true, maxlength: 200 },
     postContent: { type: String, default: '', trim: true, maxlength: 10000 },
+    postTag: { type: String, default: 'General', trim: true },
     postImage: [{ type: String, trim: true }],
     status: {
       type: String,
