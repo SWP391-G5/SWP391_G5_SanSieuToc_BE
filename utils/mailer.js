@@ -338,23 +338,23 @@ function formatVnd(amount) {
 
 async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmail }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Thong bao tai khoan Manager';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Thông báo xóa tài khoản Manager';
+  const safeName = name || 'bạn';
   const safeAdminEmail = adminEmail || user;
   const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    'He thong nhan duoc yeu cau xoa tai khoan Manager cua ban.',
-    'Ban co 3 ngay de rut het so du trong vi (neu co) truoc khi tai khoan bi xoa.',
+    'Hệ thống nhận được yêu cầu xóa tài khoản Manager của bạn.',
+    'Bạn có 3 ngày để rút hết số dư trong ví (nếu có) trước khi tài khoản bị xóa.',
     '',
-    `Thoi gian du kien xoa tai khoan: ${safeDate}`,
+    `Thời gian dự kiến xóa tài khoản: ${safeDate}`,
     '',
-    `Neu ban co thac mac, vui long lien he Admin qua email: ${safeAdminEmail}`, 
+    `Nếu bạn có thắc mắc, vui lòng liên hệ Admin qua email: ${safeAdminEmail}`,
     '',
-    'Tran trong,',
-    'San Sieu Toc',
+    'Trân trọng,',
+    'Sân Siêu Tốc',
   ].join('\n');
 
   return getTransporter().sendMail({
@@ -367,23 +367,23 @@ async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmai
 
 async function sendOwnerDeletionScheduledEmail({ to, name, scheduledAt, adminEmail }) {
   const user = process.env.EMAIL_USER;
-  const subject = 'San Sieu Toc - Thong bao xoa tai khoan Owner';
-  const safeName = name || 'ban';
+  const subject = 'Sân Siêu Tốc - Thông báo xóa tài khoản Owner';
+  const safeName = name || 'bạn';
   const safeAdminEmail = adminEmail || user;
   const safeDate = scheduledAt instanceof Date ? scheduledAt.toLocaleString('vi-VN') : String(scheduledAt || '');
 
   const text = [
-    `Xin chao ${safeName},`,
+    `Xin chào ${safeName},`,
     '',
-    'He thong nhan duoc yeu cau xoa tai khoan Owner cua ban.',
-    'Ban co 3 ngay de rut het so du trong vi (neu co) truoc khi tai khoan bi xoa.',
+    'Hệ thống nhận được yêu cầu xóa tài khoản Owner của bạn.',
+    'Bạn có 3 ngày để rút hết số dư trong ví (nếu có) trước khi tài khoản bị xóa.',
     '',
-    `Thoi gian du kien xoa tai khoan: ${safeDate}`,
+    `Thời gian dự kiến xóa tài khoản: ${safeDate}`,
     '',
-    `Neu ban can ho tro, vui long lien he Admin qua email: ${safeAdminEmail}`,
+    `Nếu bạn cần hỗ trợ, vui lòng liên hệ Admin qua email: ${safeAdminEmail}`,
     '',
-    'Tran trong,',
-    'San Sieu Toc',
+    'Trân trọng,',
+    'Sân Siêu Tốc',
   ].join('\n');
 
   return getTransporter().sendMail({
