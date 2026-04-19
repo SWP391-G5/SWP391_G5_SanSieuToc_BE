@@ -207,7 +207,8 @@ async function getMyBookings(req, res) {
         groupedByDate[dateKey].push({
           start: startHour,
           end: endHour,
-          id: d._id.toString()
+          id: d._id.toString(),
+          status: d.status
         });
       }
 

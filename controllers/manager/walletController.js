@@ -1,6 +1,5 @@
 const { getManagerWallet, getManagerTransactions, getManagerRevenueSummary } = require('../../services/manager/walletService');
 const Wallet = require('../../models/Wallet');
-const WithdrawRequest = require('../../models/WithdrawRequest');
 const Transaction = require('../../models/Transaction');
 
 function formatVnd(amount) {
@@ -87,15 +86,11 @@ exports.createWithdrawRequest = async (req, res) => {
       balanceAfter: wallet.balance,
       description: `Rút tiền về ${bankName} - STK: ${accountNumber}`,
       bookingType: 'field',
-    });
-
-    await WithdrawRequest.create({
       ownerID: managerId,
-      amount: withdrawAmount,
       bankName,
       accountNumber,
       accountName,
-      status: 'Completed',
+      withdrawStatus: 'Completed',
     });
 
     res.json({
