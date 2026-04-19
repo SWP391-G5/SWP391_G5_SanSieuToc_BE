@@ -5,7 +5,7 @@ const WalletSchema = new mongoose.Schema(
     // Dynamic reference: can point to either UserAccount or AdminAccount
     walletOwnerModel: {
       type: String,
-      enum: ['UserAccount', 'AdminAccount'],
+      enum: ['UserAccount', 'AdminAccount', 'Owner'],
       required: true,
       default: 'UserAccount',
     },
