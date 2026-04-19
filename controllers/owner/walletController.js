@@ -61,24 +61,34 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
   const { amount, bankName, accountNumber, accountName } = req.body;
   const Transaction = require('../../models/Transaction');
 
-  if (!amount || amount < 50000) {
-    return res.status(400).json({ message: 'Số tiền tối thiểu là 50,000 VND' });
+  const withdrawAmount = Number(amount);
+  const MIN_AMOUNT = 100000;
+  const MAX_AMOUNT = 10000000;
+
+  if (!withdrawAmount || isNaN(withdrawAmount) || withdrawAmount <= 0) {
+    return res.status(400).json({ message: 'Vui lòng nhập số tiền hợp lệ' });
+  }
+  if (withdrawAmount < MIN_AMOUNT) {
+    return res.status(400).json({ message: `Số tiền tối thiểu là ${MIN_AMOUNT.toLocaleString('vi-VN')} VND` });
+  }
+  if (withdrawAmount > MAX_AMOUNT) {
+    return res.status(400).json({ message: `Số tiền tối đa là ${MAX_AMOUNT.toLocaleString('vi-VN')} VND` });
   }
 
   const wallet = await getOwnerWallet(ownerId);
-  if (wallet.balance < amount) {
+  if (wallet.balance < withdrawAmount) {
     return res.status(400).json({ message: 'Số dư không đủ' });
   }
 
   const balanceBefore = wallet.balance;
-  wallet.balance -= amount;
+  wallet.balance -= withdrawAmount;
   await wallet.save();
 
   await Transaction.create({
     fromWalletID: wallet._id,
     toWalletID: null,
     type: 'Withdraw',
-    amount: -amount,
+    amount: -withdrawAmount,
     balanceBefore: balanceBefore,
     balanceAfter: wallet.balance,
     description: `Rút tiền về ${bankName} - STK: ${accountNumber}`,
@@ -87,7 +97,7 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
 
   await WithdrawRequest.create({
     ownerID: ownerId,
-    amount,
+    amount: withdrawAmount,
     bankName,
     accountNumber,
     accountName,
@@ -96,7 +106,7 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: `Đã rút ${formatVnd(amount)} thành công`,
+    message: `Đã rút ${formatVnd(withdrawAmount)} thành công`,
     newBalance: wallet.balance,
   });
 });
