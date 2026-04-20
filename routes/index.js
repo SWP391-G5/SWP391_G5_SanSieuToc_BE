@@ -20,6 +20,7 @@ const publicBannersRoutes = require('./public/banners');
 const publicFieldsRoutes = require('./public/fields');
 const publicPostsRoutes = require('./public/posts');
 const publicPrivacyRoutes = require('./public/privacy');
+const publicPostTagsRoutes = require('./public/postTags');
 const uploadRoutes = require('./uploads');
 
 // My Owner routes
@@ -44,6 +45,7 @@ router.use('/api/manager', managerRoutes);
 router.use('/api/owner', ownerRoutes);
 router.use('/api/banners', publicBannersRoutes);
 router.use('/api/public/fields', publicFieldsRoutes);
+router.use('/api/public/post-tags', publicPostTagsRoutes);
 router.use('/api/public/posts', publicPostsRoutes);
 router.use('/api/privacy', publicPrivacyRoutes);
 router.use('/api/uploads', uploadRoutes);

@@ -11,6 +11,33 @@ const mongoose = require('mongoose');
 
 const Post = require('../../models/Post');
 
+function normalizeTags(input) {
+  if (!input) return [];
+
+  let raw = [];
+  if (Array.isArray(input)) raw = input;
+  else if (typeof input === 'string') {
+    const s = input.trim();
+    if (!s) return [];
+    try {
+      const parsed = JSON.parse(s);
+      raw = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      raw = s.includes(',') ? s.split(',') : [s];
+    }
+  } else {
+    raw = [input];
+  }
+
+  const normalized = raw
+    .flat()
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .slice(0, 10);
+
+  return Array.from(new Set(normalized));
+}
+
 /**
  * createOwnerPost
  * Creates a new Pending post owned by UserAccount (Owner).
@@ -23,6 +50,8 @@ async function createOwnerPost(ownerId, payload) {
   try {
     const postName = String(payload?.postName || '').trim();
     const postContent = String(payload?.postContent || '').trim();
+
+    const postTags = normalizeTags(payload?.postTags || payload?.tags || payload?.tag);
 
     const files = Array.isArray(payload?.files) ? payload.files : [];
 
@@ -65,6 +94,7 @@ async function createOwnerPost(ownerId, payload) {
       postName,
       postContent,
       postImage: finalUrls,
+      postTags,
       status: 'Pending',
     });
 
@@ -149,6 +179,8 @@ async function updateMyPost(ownerId, postId, payload) {
       post.postContent = payload.postContent.trim();
     }
 
+    const nextTags = normalizeTags(payload?.postTags || payload?.tags || payload?.tag);
+
     // If owner wants to change images, re-upload with multipart form-data images[]
     let finalUrls = [...providedUrls];
     if (files.length > 0) {
@@ -163,10 +195,14 @@ async function updateMyPost(ownerId, postId, payload) {
     }
 
     if (files.length > 0 || providedUrls.length > 0) {
-       post.postImage = finalUrls.slice(0, 6);
+      post.postImage = finalUrls.slice(0, 6);
     } else if (payload?.postImage !== undefined) {
-       // if explicitly sent as empty
-       post.postImage = [];
+      // if explicitly sent as empty
+      post.postImage = [];
+    }
+
+    if ((payload?.postTags ?? payload?.tags ?? payload?.tag) !== undefined) {
+      post.postTags = nextTags;
     }
 
     // Re-approval is required after any owner update
