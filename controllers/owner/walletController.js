@@ -1,4 +1,4 @@
-const { getOwnerWallet, getOwnerTransactions, getOwnerRevenueSummary } = require('../../services/owner/walletService');
+const { getOwnerWallet, getOwnerTransactions, getOwnerRevenueSummary, getOwnerRevenueSeries } = require('../../services/owner/walletService');
 const Wallet = require('../../models/Wallet');
 const Transaction = require('../../models/Transaction');
 const asyncHandler = require('../../middlewares/asyncHandler');
@@ -53,6 +53,18 @@ exports.getRevenueSummary = asyncHandler(async (req, res) => {
       totalRevenueFormatted: formatVnd(summary.totalRevenue),
       transactionCount: summary.transactionCount,
     },
+  });
+});
+
+exports.getRevenueSeries = asyncHandler(async (req, res) => {
+  const ownerId = req.user.sub || req.user.id || req.user._id;
+  const { startDate, endDate, bookingType, interval } = req.query;
+
+  const series = await getOwnerRevenueSeries(ownerId, startDate, endDate, interval, bookingType);
+
+  res.json({
+    interval: series.interval,
+    series: series.series,
   });
 });
 

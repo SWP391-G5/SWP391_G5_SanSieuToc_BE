@@ -19,17 +19,30 @@ app.use(cors({
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    
-    // Start cron jobs after DB connection
-    const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob } = require('./utils/cronJobs');
-    startAutoCompleteJob();
-    startOwnerDeletionJob();
-    startManagerDeletionJob();
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+const mongoUri = process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error('MONGO_URI is not set. Check BE/.env and restart the server.');
+} else {
+  // DNS fix for MongoDB Atlas SRV on some Windows networks
+  const dns = require('dns');
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+  } catch (err) {
+    console.warn('Could not set custom DNS servers:', err.message);
+  }
+
+  mongoose.connect(mongoUri)
+    .then(() => {
+      console.log('Connected to MongoDB');
+
+      // Start cron jobs after DB connection
+      const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob } = require('./utils/cronJobs');
+      startAutoCompleteJob();
+      startOwnerDeletionJob();
+      startManagerDeletionJob();
+    })
+    .catch(err => console.error('MongoDB connection error:', err));
+}
 
 // Load all models
 require('./models');
