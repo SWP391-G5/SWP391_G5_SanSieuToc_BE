@@ -172,6 +172,15 @@ function getEffectiveHourlyPrice(doc) {
   return 0;
 }
 
+function getMaxEffectiveHourlyPrice(docs) {
+  if (!Array.isArray(docs) || docs.length === 0) return 0;
+
+  return docs.reduce((max, doc) => {
+    const price = getEffectiveHourlyPrice(doc);
+    return price > max ? price : max;
+  }, 0);
+}
+
 function toFieldDto(doc, ratingMap) {
   const id = String(doc?._id || '');
   const city = inferCity(doc);
@@ -269,6 +278,7 @@ router.get(
     const filter = { status: { $ne: 'Deleted' } };
 
     let docs = await Field.find(filter).sort({ createdAt: -1 }).lean();
+    const maxPriceInDatabase = getMaxEffectiveHourlyPrice(docs);
 
     if (normalizedQ) {
       docs = docs.filter((d) => normalizeText(d?.fieldName).includes(normalizedQ));
@@ -330,7 +340,15 @@ router.get(
       });
     }
 
-    res.json({ items });
+    res.json({
+      items,
+      meta: {
+        priceRange: {
+          min: 0,
+          max: maxPriceInDatabase,
+        },
+      },
+    });
   })
 );
 
