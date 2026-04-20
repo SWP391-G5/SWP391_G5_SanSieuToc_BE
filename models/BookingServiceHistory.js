@@ -13,6 +13,11 @@ const BookingServiceHistorySchema = new mongoose.Schema(
       required: true,
     },
     totalPriceSnapShot: { type: Number, default: 0, min: 0 },
+    status: {
+      type: String,
+      enum: ['Active', 'Cancelled'],
+      default: 'Active',
+    },
     service: [
       {
         serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true },
