@@ -34,6 +34,10 @@ async function processImages(images) {
    return await Promise.all(uploads);
 }
 
+function escapeRegex(input) {
+   return String(input).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
 /**
@@ -93,33 +97,66 @@ async function createField(req, res) {
       image,
    } = req.body || {};
 
-   if (!fieldName || !String(fieldName).trim()) {
+   const fieldNameTrimmed = String(fieldName || '').trim();
+   const fieldTypeTrimmed = String(fieldType || '').trim();
+   const addressTrimmed = String(address || '').trim();
+   const openingTimeTrimmed = String(openingTime || '').trim();
+   const closingTimeTrimmed = String(closingTime || '').trim();
+
+   if (!fieldNameTrimmed) {
       return res.status(400).json({ message: 'Tên sân là bắt buộc.' });
    }
-   if (!fieldType || !String(fieldType).trim()) {
+   if (!fieldTypeTrimmed) {
       return res.status(400).json({ message: 'Loại sân là bắt buộc.' });
    }
+   if (!addressTrimmed) {
+      return res.status(400).json({ message: 'Địa chỉ sân là bắt buộc.' });
+   }
+   if (!openingTimeTrimmed) {
+      return res.status(400).json({ message: 'Giờ mở cửa là bắt buộc.' });
+   }
+   if (!closingTimeTrimmed) {
+      return res.status(400).json({ message: 'Giờ đóng cửa là bắt buộc.' });
+   }
+   if (hourlyPrice === undefined || hourlyPrice === null || String(hourlyPrice).trim() === '') {
+      return res.status(400).json({ message: 'Giá/giờ là bắt buộc.' });
+   }
+   if (slotDuration === undefined || slotDuration === null || String(slotDuration).trim() === '') {
+      return res.status(400).json({ message: 'Thời lượng slot là bắt buộc.' });
+   }
 
-   if (hourlyPrice !== undefined) {
-      const hourlyPriceNumber = Number(hourlyPrice);
-      if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
-         return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
-      }
+   const hourlyPriceNumber = Number(hourlyPrice);
+   if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
+      return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
+   }
+
+   const slotDurationNumber = Number(slotDuration);
+   if (Number.isNaN(slotDurationNumber) || slotDurationNumber <= 0) {
+      return res.status(400).json({ message: 'Thời lượng slot không hợp lệ.' });
+   }
+
+   const duplicate = await Field.findOne({
+      ownerID,
+      status: { $ne: 'Deleted' },
+      fieldName: { $regex: new RegExp(`^${escapeRegex(fieldNameTrimmed)}$`, 'i') },
+   }).lean();
+   if (duplicate) {
+      return res.status(409).json({ message: 'Tên sân đã tồn tại. Vui lòng chọn tên khác.' });
    }
 
    const imageUrls = await processImages(image);
 
    const field = await Field.create({
       ownerID,
-      fieldName: String(fieldName).trim(),
-      fieldType: String(fieldType).trim(),
-      address: address ? String(address).trim() : '',
+      fieldName: fieldNameTrimmed,
+      fieldType: fieldTypeTrimmed,
+      address: addressTrimmed,
       description: description ? String(description).trim() : '',
-      hourlyPrice: hourlyPrice !== undefined ? Number(hourlyPrice) : 0,
-      price: hourlyPrice !== undefined ? Number(hourlyPrice) : 0,
-      slotDuration: slotDuration ? Number(slotDuration) : 60,
-      openingTime: openingTime ? String(openingTime).trim() : '06:00',
-      closingTime: closingTime ? String(closingTime).trim() : '22:00',
+      hourlyPrice: hourlyPriceNumber,
+      price: hourlyPriceNumber,
+      slotDuration: slotDurationNumber,
+      openingTime: openingTimeTrimmed || '06:00',
+      closingTime: closingTimeTrimmed || '22:00',
       utilities: Array.isArray(utilities) ? utilities.map((u) => String(u).trim()).filter(Boolean) : [],
       image: imageUrls,
       status: 'Active',
@@ -154,25 +191,58 @@ async function updateField(req, res) {
       image,
    } = req.body || {};
 
+   if (fieldName !== undefined) {
+      const nextName = String(fieldName).trim();
+      if (!nextName) return res.status(400).json({ message: 'Tên sân là bắt buộc.' });
+
+      const duplicate = await Field.findOne({
+         ownerID,
+         status: { $ne: 'Deleted' },
+         _id: { $ne: field._id },
+         fieldName: { $regex: new RegExp(`^${escapeRegex(nextName)}$`, 'i') },
+      }).lean();
+      if (duplicate) {
+         return res.status(409).json({ message: 'Tên sân đã tồn tại. Vui lòng chọn tên khác.' });
+      }
+
+      field.fieldName = nextName;
+   }
+   if (fieldType !== undefined) {
+      const nextType = String(fieldType).trim();
+      if (!nextType) return res.status(400).json({ message: 'Loại sân là bắt buộc.' });
+      field.fieldType = nextType;
+   }
+   if (address !== undefined) {
+      const nextAddress = String(address).trim();
+      if (!nextAddress) return res.status(400).json({ message: 'Địa chỉ sân là bắt buộc.' });
+      field.address = nextAddress;
+   }
+   if (description !== undefined) field.description = String(description).trim();
    if (hourlyPrice !== undefined) {
       const hourlyPriceNumber = Number(hourlyPrice);
       if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
          return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
       }
-   }
-
-   if (fieldName !== undefined) field.fieldName = String(fieldName).trim();
-   if (fieldType !== undefined) field.fieldType = String(fieldType).trim();
-   if (address !== undefined) field.address = String(address).trim();
-   if (description !== undefined) field.description = String(description).trim();
-   if (hourlyPrice !== undefined) {
-      const hourlyPriceNumber = Number(hourlyPrice);
       field.hourlyPrice = hourlyPriceNumber;
       field.price = hourlyPriceNumber;
    }
-   if (slotDuration !== undefined) field.slotDuration = Number(slotDuration);
-   if (openingTime !== undefined) field.openingTime = String(openingTime).trim();
-   if (closingTime !== undefined) field.closingTime = String(closingTime).trim();
+   if (slotDuration !== undefined) {
+      const slotDurationNumber = Number(slotDuration);
+      if (Number.isNaN(slotDurationNumber) || slotDurationNumber <= 0) {
+         return res.status(400).json({ message: 'Thời lượng slot không hợp lệ.' });
+      }
+      field.slotDuration = slotDurationNumber;
+   }
+   if (openingTime !== undefined) {
+      const nextOpening = String(openingTime).trim();
+      if (!nextOpening) return res.status(400).json({ message: 'Giờ mở cửa là bắt buộc.' });
+      field.openingTime = nextOpening;
+   }
+   if (closingTime !== undefined) {
+      const nextClosing = String(closingTime).trim();
+      if (!nextClosing) return res.status(400).json({ message: 'Giờ đóng cửa là bắt buộc.' });
+      field.closingTime = nextClosing;
+   }
    if (utilities !== undefined) {
       field.utilities = Array.isArray(utilities)
          ? utilities.map((u) => String(u).trim()).filter(Boolean)
