@@ -135,15 +135,16 @@ async function approveCancel(req, res) {
          walletOwnerId: ownerId,
          walletOwnerModel: 'Owner',
       });
-      if (!ownerWallet) {
-         ownerWallet = await Wallet.create({
-            walletOwnerId: ownerId,
-            walletOwnerModel: 'Owner',
-            balance: 0,
-         });
-      }
+if (!ownerWallet) {
+          ownerWallet = await Wallet.create({
+             walletOwnerId: ownerId,
+             walletOwnerModel: 'Owner',
+             balance: 0,
+             reservedBalance: 0,
+          });
+       }
 
-      // Hoàn tiền field booking (80%)
+// Hoàn tiền field booking (80%)
       const fieldRefundAmount = Math.floor(booking.totalPrice * 0.8);
       if (fieldRefundAmount > 0 && booking.statusPayment === 'Pending Refund') {
          // Trừ tiền owner wallet
@@ -249,13 +250,13 @@ async function approveCancel(req, res) {
          }
       }
 
-      // Cập nhật trạng thái Booking
-      booking.status = 'Cancel';
-      booking.statusPayment = 'Refunded';
-      await booking.save();
+// Cập nhật trạng thái Booking
+       booking.status = 'Cancelled';
+       booking.statusPayment = 'Refunded';
+       await booking.save();
 
-      // Cập nhật tất cả BookingDetail sang Cancel
-      await BookingDetail.updateMany({ bookingID: id }, { status: 'Cancel' });
+       // Cập nhật tất cả BookingDetail sang Cancelled
+       await BookingDetail.updateMany({ bookingID: id }, { status: 'Cancelled' });
 
       res.json({
          message: 'Cancellation approved and refund processed.',
@@ -286,15 +287,15 @@ async function rejectCancel(req, res) {
          return res.status(400).json({ message: 'Booking is not in Cancel Request status' });
       }
 
-      booking.status = 'Booked';
-      booking.statusPayment = 'Completed';
-      booking.refundReason = '';
-      await booking.save();
+booking.status = 'Active';
+       booking.statusPayment = 'Completed';
+       booking.refundReason = '';
+       await booking.save();
 
-      res.json({
-         message: 'Cancellation request rejected. Booking restored.',
-         booking: { id: booking._id, status: booking.status, statusPayment: booking.statusPayment },
-      });
+       res.json({
+          message: 'Cancellation request rejected. Booking restored.',
+          booking: { id: booking._id, status: booking.status, statusPayment: booking.statusPayment },
+       });
    } catch (err) {
       console.error('rejectCancel error:', err);
       res.status(500).json({ message: 'Server error', error: err.message });
