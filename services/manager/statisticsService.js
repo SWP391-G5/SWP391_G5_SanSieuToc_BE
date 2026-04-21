@@ -1,3 +1,89 @@
+/**
+ * ============================================================
+ * FILE: services/manager/statisticsService.js
+ * ============================================================
+ * WHAT IS THIS FILE?
+ *   Manager/Admin Statistics "Service" layer.
+ *   Provides aggregated KPIs + trend series for the Manager scope.
+ *
+ * SCOPE / SECURITY MODEL (CRITICAL):
+ *   - Admin assigns a Manager to a set of Owners.
+ *   - Each Owner UserAccount stores `managerID` referencing that Manager.
+ *   - All statistics in this service are STRICTLY scoped by:
+ *       UserAccount.role = Owner AND UserAccount.managerID = managerId
+ *     so a manager only sees owners assigned to them.
+ *
+ * WHY SO MANY COLLECTIONS?
+ *   ManagerStatisticsPage queries multiple KPIs that naturally live in
+ *   different domains:
+ *     - Owners/Fields scope: UserAccount, Role, Field
+ *     - Booking "headers": Booking
+ *     - Slot "details": BookingDetail
+ *     - Payments/Refunds: Transaction
+ *
+ * IMPORTANT BUSINESS MEANINGS:
+ *   - Booking (header) counts "number of orders" created.
+ *     Example: book 11-12 every Monday for 3 weeks => 1 Booking.
+ *   - BookingDetail counts "number of concrete reserved slots".
+ *     Example above => 3 BookingDetail rows.
+ *
+ * REPORTING TIME BASIS (CURRENT DESIGN — DO NOT CHANGE):
+ *   - Booking-based metrics are filtered by Booking.createdAt.
+ *   - BookingDetail-based metrics are filtered by Booking.createdAt
+ *     via $lookup BookingDetail -> Booking, then match booking.createdAt.
+ *     (This reflects "how many slots were created by bookings in range".)
+ *
+ * ENDPOINTS USING THIS SERVICE:
+ *   - GET /api/manager/statistics/summary         -> getSummary
+ *   - GET /api/manager/statistics/bookings-trend  -> getBookingsTrend
+ *   - GET /api/manager/statistics/revenue-trend   -> getRevenueTrend
+ *   - GET /api/manager/statistics/hot-fields      -> getHotFields
+ *
+ * QUERY PARAM CONTRACT (shared):
+ *   - preset   {string} optional:
+ *       today | last7days | thisWeek | thisMonth | lastMonth |
+ *       thisYear | lastYear | last365days | last12months
+ *   - from/to  {YYYY-MM-DD} optional: overrides preset if present
+ *   - ownerId  {ObjectId} optional: focus stats to one owner (MUST be
+ *                 within manager scope; otherwise it returns empty scope)
+ *
+ * QUERY PARAM CONTRACT (trend endpoints):
+ *   - groupBy  {string} day | week | month (default: day)
+ *
+ * QUERY PARAM CONTRACT (hot fields):
+ *   - limit {number} 1..50 default 5
+ *
+ * OUTPUT SHAPES (high level):
+ *   getSummary():
+ *     {
+ *       ownersCount, fieldsCount,
+ *       bookingsCount, totalBookingsCount,
+ *       totalSlotsBooked,
+ *       fieldRevenue, serviceRevenue,
+ *       grossRevenue, refundAmount, netRevenue,
+ *       focusedOwner?: { id, username, email, name, phone, address, status, createdAt }
+ *     }
+ *
+ *   getBookingsTrend():
+ *     { groupBy, range: { from, to }, series: [{ label, bookings }] }
+ *
+ *   getRevenueTrend():
+ *     { groupBy, range, series: [{ label, fieldRevenue, serviceRevenue, gross, refund, net }] }
+ *
+ *   getHotFields():
+ *     { range: { from, to }, items: [{ fieldId, fieldName, ownerId, bookingsCount }] }
+ *
+ * PERFORMANCE NOTES / INDEX HINTS:
+ *   Consider adding indexes (if not already present):
+ *     - useraccounts: { roleID: 1, managerID: 1, status: 1 }
+ *     - fields: { ownerID: 1, status: 1 }
+ *     - bookings: { createdAt: 1 }
+ *     - bookingdetails: { bookingID: 1 }, and (if fieldID is consistent) { fieldID: 1 }
+ *     - transactions: { bookingID: 1, createdAt: 1, type: 1 }
+ *
+ * ============================================================
+ */
+
 const mongoose = require('mongoose');
 
 const UserAccount = require('../../models/UserAccount');
@@ -7,6 +93,13 @@ const Booking = require('../../models/Booking');
 const BookingDetail = require('../../models/BookingDetail');
 const Transaction = require('../../models/Transaction');
 
+/**
+ * ============================================================
+ * INTERNAL UTILS: TIME WINDOW
+ * ============================================================
+ * We normalize date windows to day boundaries to make dashboard
+ * numbers stable across time-of-day.
+ */
 function toStartOfDay(d) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -19,6 +112,17 @@ function toEndOfDay(d) {
   return x;
 }
 
+/**
+ * parseDateRange(query)
+ * ------------------------------------------------------------
+ * Supports either:
+ *   - preset-based ranges (today/last7days/thisMonth/thisYear...)
+ *   - explicit from/to in YYYY-MM-DD
+ *
+ * NOTE: If from/to is provided, it takes precedence over preset.
+ *
+ * @returns {{from?: Date, to?: Date}}
+ */
 function parseDateRange(query = {}) {
   // Accept either preset or from/to (YYYY-MM-DD)
   const preset = String(query.preset || '').trim();
@@ -86,6 +190,12 @@ function parseDateRange(query = {}) {
   return { from: toStartOfDay(defaultFrom), to: toEndOfDay(today) };
 }
 
+/**
+ * buildDateMatch(field, range)
+ * ------------------------------------------------------------
+ * Helper to build: { [field]: { $gte, $lte } }
+ * Returns empty object if no bound exists.
+ */
 function buildDateMatch(field, range) {
   const cond = {};
   if (range?.from) cond.$gte = range.from;
@@ -94,12 +204,28 @@ function buildDateMatch(field, range) {
   return { [field]: cond };
 }
 
+/**
+ * ============================================================
+ * INTERNAL UTILS: SCOPE RESOLUTION
+ * ============================================================
+ * The following helpers implement strict manager scoping.
+ *
+ * SCOPING CHAIN:
+ *   managerId -> ownerIds -> fieldIds -> bookingIds
+ */
 async function getOwnerRoleId() {
   // Role schema uses field `name`
   const role = await Role.findOne({ name: 'Owner' }).select('_id').lean();
   return role?._id;
 }
 
+/**
+ * resolveScopedOwnerIds(managerId, query)
+ * ------------------------------------------------------------
+ * Returns owner ObjectIds assigned to the manager.
+ * If query.ownerId is provided, it further narrows down to that owner
+ * BUT ONLY if that owner belongs to manager scope.
+ */
 async function resolveScopedOwnerIds(managerId, query = {}) {
   if (!mongoose.isValidObjectId(String(managerId))) return [];
 
@@ -120,6 +246,13 @@ async function resolveScopedOwnerIds(managerId, query = {}) {
   return owners.map((o) => o._id);
 }
 
+/**
+ * resolveOwnerInfo(managerId, ownerId)
+ * ------------------------------------------------------------
+ * Returns focused owner info used by FE as the filter label.
+ *
+ * SECURITY: Still enforces Owner role + managerID match.
+ */
 async function resolveOwnerInfo(managerId, ownerId) {
   if (!managerId || !ownerId) return null;
   if (!mongoose.isValidObjectId(String(managerId))) return null;
@@ -151,6 +284,12 @@ async function resolveOwnerInfo(managerId, ownerId) {
   };
 }
 
+/**
+ * resolveScopedFieldIds(ownerIds, query)
+ * ------------------------------------------------------------
+ * Returns field ObjectIds belonging to the scoped owners.
+ * Optional query.fieldId further narrows down to one field.
+ */
 async function resolveScopedFieldIds(ownerIds, query = {}) {
   if (!ownerIds?.length) return [];
 
@@ -167,6 +306,15 @@ async function resolveScopedFieldIds(ownerIds, query = {}) {
   return fields.map((f) => f._id);
 }
 
+/**
+ * resolveBookingIdsByFieldIds(fieldIds)
+ * ------------------------------------------------------------
+ * BookingDetail stores `fieldID` as Mixed in this project.
+ * This helper:
+ *   - finds all BookingDetail rows whose fieldID matches any scoped field
+ *     (matching both ObjectId and string forms)
+ *   - returns unique bookingIDs referenced by those details.
+ */
 async function resolveBookingIdsByFieldIds(fieldIds) {
   if (!fieldIds?.length) return [];
 
@@ -183,6 +331,11 @@ async function resolveBookingIdsByFieldIds(fieldIds) {
   return Array.from(set);
 }
 
+/**
+ * ============================================================
+ * INTERNAL UTILS: TREND GROUPING
+ * ============================================================
+ */
 function normalizeGroupBy(groupByRaw) {
   const groupBy = String(groupByRaw || '').trim().toLowerCase();
   if (groupBy === 'day' || groupBy === 'week' || groupBy === 'month') return groupBy;
@@ -225,6 +378,19 @@ function formatLabelFromGroupId(id, groupBy) {
   return `${id.y}-${mm}-${dd}`;
 }
 
+/**
+ * ============================================================
+ * PUBLIC SERVICE: SUMMARY
+ * ============================================================
+ * Aggregates KPI cards displayed at the top of ManagerStatisticsPage.
+ *
+ * Collections involved:
+ *   - UserAccount (+Role): scope owner list
+ *   - Field: count fields in scope
+ *   - Booking: count booking headers in range
+ *   - BookingDetail: count slot rows in range (joined by Booking.createdAt)
+ *   - Transaction: sum money by type (Field Payment / Service Payment / Refund)
+ */
 async function getSummary(managerId, query = {}) {
   if (!mongoose.isValidObjectId(String(managerId))) {
     return { status: 401, body: { message: 'Unauthorized' } };
@@ -235,6 +401,8 @@ async function getSummary(managerId, query = {}) {
   const ownerIds = await resolveScopedOwnerIds(managerId, query);
   const ownersCount = ownerIds.length;
 
+  // Optional focused owner is used ONLY for display in FE header.
+  // It does not change scoping beyond ownerIds already computed.
   const focusedOwner = query.ownerId ? await resolveOwnerInfo(managerId, query.ownerId) : null;
 
   const fieldsCount = ownerIds.length
@@ -255,6 +423,7 @@ async function getSummary(managerId, query = {}) {
   const totalBookingsCount = await Booking.countDocuments(bookingMatch);
 
   // Total slots booked (BookingDetail rows) - same unit as Top Fields
+  // NOTE: time filter is based on Booking.createdAt (current spec)
   let totalSlotsBooked = 0;
   if (fieldIds.length) {
     const idsAsString = fieldIds.map((id) => String(id));
@@ -284,6 +453,8 @@ async function getSummary(managerId, query = {}) {
   // Backward-compat: bookingsCount now equals totalBookingsCount
   const bookingsCount = totalBookingsCount;
 
+  // Transactions are linked to Booking by bookingID.
+  // We filter by Transaction.createdAt to represent "money movements in range".
   const txMatch = {
     ...(bookingIds.length
       ? { bookingID: { $in: bookingIds.map((id) => new mongoose.Types.ObjectId(id)) } }
@@ -309,7 +480,7 @@ async function getSummary(managerId, query = {}) {
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
 
-  // Refund: type=Refund (per your requirement: read refund by transaction status/type only)
+  // Refund: type=Refund
   const refundAgg = await Transaction.aggregate([
     { $match: { ...txMatch, type: 'Refund' } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
@@ -339,6 +510,16 @@ async function getSummary(managerId, query = {}) {
   };
 }
 
+/**
+ * ============================================================
+ * PUBLIC SERVICE: BOOKINGS TREND
+ * ============================================================
+ * Counts Booking documents grouped by time bucket.
+ *
+ * Notes:
+ *   - This is the "header" metric (count of orders), not number of slots.
+ *   - Filter is Booking.createdAt (current spec).
+ */
 async function getBookingsTrend(managerId, query = {}) {
   if (!mongoose.isValidObjectId(String(managerId))) {
     return { status: 401, body: { message: 'Unauthorized' } };
@@ -385,6 +566,21 @@ async function getBookingsTrend(managerId, query = {}) {
   };
 }
 
+/**
+ * ============================================================
+ * PUBLIC SERVICE: REVENUE TREND
+ * ============================================================
+ * Sums Transaction.amount grouped by time bucket and transaction type.
+ *
+ * Included types:
+ *   - Field Payment
+ *   - Service Payment
+ *   - Refund
+ *
+ * Output fields:
+ *   - gross = Field + Service
+ *   - net   = gross - refund
+ */
 async function getRevenueTrend(managerId, query = {}) {
   if (!mongoose.isValidObjectId(String(managerId))) {
     return { status: 401, body: { message: 'Unauthorized' } };
@@ -466,6 +662,17 @@ async function getRevenueTrend(managerId, query = {}) {
   };
 }
 
+/**
+ * ============================================================
+ * PUBLIC SERVICE: HOT FIELDS
+ * ============================================================
+ * Ranks fields by number of BookingDetail rows within the time range.
+ *
+ * IMPORTANT:
+ *   - This intentionally uses BookingDetail as "slot count".
+ *   - Time filter is applied on Booking.createdAt via $lookup.
+ *   - BookingDetail.fieldID is Mixed => match objectId + string forms.
+ */
 async function getHotFields(managerId, query = {}) {
   if (!mongoose.isValidObjectId(String(managerId))) {
     return { status: 401, body: { message: 'Unauthorized' } };
