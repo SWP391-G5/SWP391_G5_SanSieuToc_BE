@@ -591,6 +591,11 @@ async function cancelSlot(req, res) {
       return res.status(400).json({ message: 'Cannot cancel booking with pending payment' });
     }
 
+    const hoursSinceBooked = (Date.now() - booking.createdAt.getTime()) / (1000 * 60 * 60);
+    if (hoursSinceBooked >= 12) {
+      return res.status(400).json({ message: 'Cannot cancel booking after 12 hours from booking time' });
+    }
+
     const detailsToCancel = await BookingDetail.find({ _id: { $in: bookingDetailIds } }).lean();
     if (detailsToCancel.length === 0) {
       return res.status(400).json({ message: 'No valid booking details found' });
@@ -654,6 +659,11 @@ async function cancelBooking(req, res) {
 
     if (booking.statusPayment !== 'Completed') {
       return res.status(400).json({ message: 'Cannot cancel booking with pending payment' });
+    }
+
+    const hoursSinceBooked = (Date.now() - booking.createdAt.getTime()) / (1000 * 60 * 60);
+    if (hoursSinceBooked >= 12) {
+      return res.status(400).json({ message: 'Cannot cancel booking after 12 hours from booking time' });
     }
 
     booking.status = 'Cancel Request';
