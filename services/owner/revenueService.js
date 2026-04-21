@@ -21,6 +21,12 @@ function normalizePeriod(periodRaw) {
    return 'week';
 }
 
+function normalizeSortBy(sortByRaw) {
+   const v = String(sortByRaw || '').trim().toLowerCase();
+   if (v === 'revenue') return 'revenue';
+   return 'quantity';
+}
+
 function resolveRange(period) {
    const now = new Date();
    const end = endOfDay(now);
@@ -73,7 +79,7 @@ async function getInventoryByField(ownerId) {
    });
 }
 
-async function getTopServicesByField(ownerId, periodRaw = 'week', limitRaw = 5) {
+async function getTopServicesByField(ownerId, periodRaw = 'week', limitRaw = 5, sortByRaw = 'quantity') {
    const fields = await getOwnerFields(ownerId);
    if (!fields.length) {
       return { period: normalizePeriod(periodRaw), range: resolveRange(normalizePeriod(periodRaw)), items: [] };
@@ -82,8 +88,10 @@ async function getTopServicesByField(ownerId, periodRaw = 'week', limitRaw = 5) 
    const period = normalizePeriod(periodRaw);
    const range = resolveRange(period);
    const limit = Math.max(1, Number(limitRaw) || 5);
+   const sortBy = normalizeSortBy(sortByRaw);
 
    const fieldIdsStr = fields.map((f) => String(f._id));
+   const sortField = sortBy === 'revenue' ? 'totalRevenue' : 'totalQty';
 
    const results = await BookingServiceHistory.aggregate([
       {
@@ -116,9 +124,10 @@ async function getTopServicesByField(ownerId, periodRaw = 'week', limitRaw = 5) 
                serviceName: '$service.serviceName',
             },
             totalQty: { $sum: '$service.quantity' },
+            totalRevenue: { $sum: { $multiply: ['$service.price', '$service.quantity'] } },
          },
       },
-      { $sort: { totalQty: -1 } },
+      { $sort: { [sortField]: -1 } },
       {
          $group: {
             _id: '$_id.fieldIdStr',
@@ -127,6 +136,7 @@ async function getTopServicesByField(ownerId, periodRaw = 'week', limitRaw = 5) 
                   serviceId: '$_id.serviceId',
                   serviceName: '$_id.serviceName',
                   totalQty: '$totalQty',
+                  totalRevenue: '$totalRevenue',
                },
             },
          },
@@ -144,7 +154,7 @@ async function getTopServicesByField(ownerId, periodRaw = 'week', limitRaw = 5) 
       };
    });
 
-   return { period, range, items };
+   return { period, range, items, sortBy };
 }
 
 async function getFieldDetail(ownerId, fieldId, periodRaw = 'week', limitRaw = 10) {

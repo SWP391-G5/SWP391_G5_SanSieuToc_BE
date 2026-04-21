@@ -8,15 +8,16 @@ async function getInventory(req, res) {
 
 async function getTopServices(req, res) {
    const ownerId = req.user?.sub || req.user?.id || req.user?._id;
-   const { period, limit } = req.query;
+   const { period, limit, sortBy } = req.query;
 
-   const result = await getTopServicesByField(ownerId, period, limit);
+   const result = await getTopServicesByField(ownerId, period, limit, sortBy);
 
    return res.json({
       period: result.period,
       from: result.range?.from,
       to: result.range?.to,
       items: result.items,
+      sortBy: result.sortBy,
    });
 }
 
