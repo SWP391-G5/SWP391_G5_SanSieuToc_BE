@@ -105,19 +105,29 @@ function findAddressUnit(address, patterns) {
 }
 
 function inferDistrict(doc) {
-  return findAddressUnit(doc?.address, [
+  const parts = String(doc?.address || '').split(',').map(p => p.trim()).filter(Boolean);
+  
+  const patternMatch = findAddressUnit(doc?.address, [
     /\bDistrict\s*\d+\b/i,
     /\bDistrict\s+[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:Quan|Quận|Huyen|Huyện)\s*[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:TP\.?\s*)?(?:Thu\s*Duc|Thủ\s*Đức)\b/iu,
   ]);
+  if (patternMatch) return patternMatch;
+
+  // Fallback: 2nd to last part in a multi-part address is usually the district
+  if (parts.length >= 2) {
+    return parts[parts.length - 2];
+  }
+  return '';
 }
 
 function inferStreet(doc) {
   const rawAddress = String(doc?.address || '').trim();
   if (!rawAddress) return '';
 
-  const firstPart = cleanAddressUnit(rawAddress.split(',')[0] || '');
+  const parts = rawAddress.split(',').map(p => p.trim()).filter(Boolean);
+  const firstPart = parts[0] || '';
   if (!firstPart) return '';
 
   const alreadyStreetLike =
@@ -133,12 +143,21 @@ function inferStreet(doc) {
 }
 
 function inferWard(doc) {
-  return findAddressUnit(doc?.address, [
+  const parts = String(doc?.address || '').split(',').map(p => p.trim()).filter(Boolean);
+
+  const patternMatch = findAddressUnit(doc?.address, [
     /\bWard\s*\d+\b/i,
     /\bWard\s+[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:P\.?|Phuong|Phường)\s*[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:Xa|Xã|Thi\s*Tran|Thị\s*Trấn)\s*[\p{L}\p{N}\s.-]+\b/iu,
   ]);
+  if (patternMatch) return patternMatch;
+
+  // Fallback: 3rd to last part is often the ward
+  if (parts.length >= 3) {
+    return parts[parts.length - 3];
+  }
+  return '';
 }
 
 function inferSizeKey(doc) {
@@ -325,7 +344,17 @@ router.get(
     const maxPriceInDatabase = getMaxEffectiveHourlyPrice(docs);
 
     if (normalizedQ) {
-      docs = docs.filter((d) => normalizeText(d?.fieldName).includes(normalizedQ));
+      docs = docs.filter((d) => {
+        const name = normalizeText(d?.fieldName);
+        const address = normalizeText(d?.address);
+        const cityDirect = normalizeText(d?.city);
+
+        return (
+          name.includes(normalizedQ) ||
+          address.includes(normalizedQ) ||
+          cityDirect.includes(normalizedQ)
+        );
+      });
     }
 
     // Price filter supports both `hourlyPrice` and legacy `price` schema.
