@@ -14,6 +14,7 @@ router.put('/feedback/:feedbackId', authenticate, bookingController.updateFeedba
 router.delete('/feedback/:feedbackId', authenticate, bookingController.deleteFeedback);
 router.get('/field/:fieldId/slots', bookingController.getBookedSlots);
 router.post('/', authenticate, bookingController.createBooking);
+router.post('/validate-voucher', authenticate, bookingController.validateVoucher);
 router.put('/cancel/:bookingId', authenticate, bookingController.cancelBooking);
 router.put('/cancel/:bookingId/slot', authenticate, bookingController.cancelSlot);
 

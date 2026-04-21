@@ -24,7 +24,7 @@ const BookingDetailSchema = new mongoose.Schema(
     priceSnapShot: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
-      enum: ['Active', 'End', 'Not Arrive', 'Cancel Request', 'Cancel'],
+      enum: ['Active', 'Ended', 'Not Arrive', 'Cancel Request', 'Cancelled'],
       default: 'Active',
     },
   },
