@@ -1,5 +1,6 @@
 const Booking = require('../../models/Booking');
 const BookingDetail = require('../../models/BookingDetail');
+const BookingServiceHistory = require('../../models/BookingServiceHistory');
 const Field = require('../../models/Field');
 const Wallet = require('../../models/Wallet');
 const Transaction = require('../../models/Transaction');
@@ -60,11 +61,15 @@ async function getBookingsForOwner(req, res) {
          const customer = customerMap[b.customerID.toString()] || {};
 
          const dateKeys = [...new Set(bDetails.map((d) => new Date(d.startTime).toISOString().split('T')[0]))].sort();
-         const slotsFormatted = bDetails.map((d) => {
-            const s = new Date(d.startTime);
-            const e = new Date(d.endTime);
-            return `${String(s.getHours()).padStart(2, '0')}:00 - ${String(e.getHours()).padStart(2, '0')}:00`;
-         });
+const slotsFormatted = bDetails.map((d) => {
+             const s = new Date(d.startTime);
+             const e = new Date(d.endTime);
+             const startHour = String(s.getHours()).padStart(2, '0');
+             const startMin = String(s.getMinutes()).padStart(2, '0');
+             const endHour = String(e.getHours()).padStart(2, '0');
+             const endMin = String(e.getMinutes()).padStart(2, '0');
+             return `${startHour}:${startMin} - ${endHour}:${endMin}`;
+          });
 
          return {
             id: b._id,
@@ -97,7 +102,7 @@ async function getBookingsForOwner(req, res) {
    }
 }
 
-// PATCH /api/owner/bookings/:id/approve-cancel — Duyệt hủy + hoàn ví
+// PATCH /api/owner/bookings/:id/approve-cancel — Duyệt hủy + hoàn ví (cả field và service)
 async function approveCancel(req, res) {
    try {
       const ownerId = req.user.sub || req.user.userId || req.user.id;
@@ -107,44 +112,141 @@ async function approveCancel(req, res) {
       if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
       // Ownership check
-      const detail = await BookingDetail.findOne({ bookingID: id });
-      if (!detail) return res.status(404).json({ message: 'Booking detail not found' });
+      const details = await BookingDetail.find({ bookingID: id }).lean();
+      if (!details || details.length === 0) {
+         return res.status(404).json({ message: 'Booking detail not found' });
+      }
 
-      const field = await Field.findOne({ _id: detail.fieldID, ownerID: ownerId });
-      if (!field) return res.status(403).json({ message: 'Forbidden: Not your field' });
+      const fieldIds = details.map(d => d.fieldID?.toString ? d.fieldID.toString() : d.fieldID);
+      const fields = await Field.find({ _id: { $in: fieldIds }, ownerID: ownerId, status: { $ne: 'Deleted' } }).lean();
+      if (!fields || fields.length === 0) {
+         return res.status(403).json({ message: 'Forbidden: Not your field' });
+      }
 
       if (booking.status !== 'Cancel Request') {
          return res.status(400).json({ message: 'Booking is not in Cancel Request status' });
       }
 
-      // Hoàn tiền vào ví Customer
-      if (booking.totalPrice > 0 && booking.statusPayment === 'Pending Refund') {
-         let wallet = await Wallet.findOne({
+      let totalRefund = 0;
+      const ownerWalletsByField = {};
+
+      // Lấy owner wallet
+      let ownerWallet = await Wallet.findOne({
+         walletOwnerId: ownerId,
+         walletOwnerModel: 'Owner',
+      });
+      if (!ownerWallet) {
+         ownerWallet = await Wallet.create({
+            walletOwnerId: ownerId,
+            walletOwnerModel: 'Owner',
+            balance: 0,
+         });
+      }
+
+      // Hoàn tiền field booking (80%)
+      const fieldRefundAmount = Math.floor(booking.totalPrice * 0.8);
+      if (fieldRefundAmount > 0 && booking.statusPayment === 'Pending Refund') {
+         // Trừ tiền owner wallet
+         const ownerBalanceBefore = ownerWallet.balance;
+         ownerWallet.balance -= fieldRefundAmount;
+         await ownerWallet.save();
+
+         await Transaction.create({
+            bookingID: booking._id,
+            fromWalletID: ownerWallet._id,
+            toWalletID: null,
+            type: 'Refund',
+            amount: -fieldRefundAmount,
+            balanceBefore: ownerBalanceBefore,
+            balanceAfter: ownerWallet.balance,
+            description: 'Hoàn tiền cho khách hàng (80% tiền sân)',
+            bookingType: 'field',
+            ownerID: ownerId,
+         });
+
+         // Hoàn tiền vào ví customer
+         let customerWallet = await Wallet.findOne({
             walletOwnerId: booking.customerID,
             walletOwnerModel: 'UserAccount',
          });
-         if (!wallet) {
-            wallet = await Wallet.create({
+         if (!customerWallet) {
+            customerWallet = await Wallet.create({
                walletOwnerId: booking.customerID,
                walletOwnerModel: 'UserAccount',
                balance: 0,
             });
          }
-         const balanceBefore = wallet.balance;
-         wallet.balance += booking.totalPrice;
-         await wallet.save();
+         const customerBalanceBefore = customerWallet.balance;
+         customerWallet.balance += fieldRefundAmount;
+         await customerWallet.save();
+         totalRefund += fieldRefundAmount;
 
          await Transaction.create({
             bookingID: booking._id,
             fromWalletID: null,
-            toWalletID: wallet._id,
+            toWalletID: customerWallet._id,
             type: 'Refund',
-            amount: booking.totalPrice,
-            balanceBefore,
-            balanceAfter: wallet.balance,
-            description: 'Refund from booking cancellation',
+            amount: fieldRefundAmount,
+            balanceBefore: customerBalanceBefore,
+            balanceAfter: customerWallet.balance,
+            description: 'Hoàn tiền hủy sân (80%)',
             bookingType: 'field',
          });
+      }
+
+      // Hoàn tiền service bookings (100%)
+      const detailIds = details.map(d => d._id);
+      const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
+      
+      for (const sh of serviceHistories) {
+         if (sh.totalPriceSnapShot > 0) {
+            // Trừ tiền owner wallet (100% service)
+            const ownerBalanceBefore = ownerWallet.balance;
+            ownerWallet.balance -= sh.totalPriceSnapShot;
+            await ownerWallet.save();
+
+            await Transaction.create({
+               bookingID: booking._id,
+               fromWalletID: ownerWallet._id,
+               toWalletID: null,
+               type: 'Refund',
+               amount: -sh.totalPriceSnapShot,
+               balanceBefore: ownerBalanceBefore,
+               balanceAfter: ownerWallet.balance,
+               description: 'Hoàn tiền cho khách hàng (100% tiền dịch vụ)',
+               bookingType: 'service',
+               ownerID: ownerId,
+            });
+
+            // Hoàn tiền vào ví customer
+            let customerWallet = await Wallet.findOne({
+               walletOwnerId: booking.customerID,
+               walletOwnerModel: 'UserAccount',
+            });
+            if (!customerWallet) {
+               customerWallet = await Wallet.create({
+                  walletOwnerId: booking.customerID,
+                  walletOwnerModel: 'UserAccount',
+                  balance: 0,
+               });
+            }
+            const customerBalanceBefore = customerWallet.balance;
+            customerWallet.balance += sh.totalPriceSnapShot;
+            await customerWallet.save();
+            totalRefund += sh.totalPriceSnapShot;
+
+            await Transaction.create({
+               bookingID: booking._id,
+               fromWalletID: null,
+               toWalletID: customerWallet._id,
+               type: 'Refund',
+               amount: sh.totalPriceSnapShot,
+               balanceBefore: customerBalanceBefore,
+               balanceAfter: customerWallet.balance,
+               description: 'Hoàn tiền hủy dịch vụ (100%)',
+               bookingType: 'service',
+            });
+         }
       }
 
       // Cập nhật trạng thái Booking
@@ -158,6 +260,7 @@ async function approveCancel(req, res) {
       res.json({
          message: 'Cancellation approved and refund processed.',
          booking: { id: booking._id, status: booking.status, statusPayment: booking.statusPayment },
+         totalRefund,
       });
    } catch (err) {
       console.error('approveCancel error:', err);
