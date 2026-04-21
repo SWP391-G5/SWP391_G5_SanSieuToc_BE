@@ -42,6 +42,10 @@ const TransactionSchema = new mongoose.Schema(
       enum: ['Pending', 'Approved', 'Rejected', 'Completed'],
       default: 'Pending',
     },
+    scheduledAt: {
+      type: Date,
+      default: null,
+    },
     note: { type: String, default: '' },
   },
   { timestamps: true }

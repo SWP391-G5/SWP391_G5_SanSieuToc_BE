@@ -6,6 +6,7 @@ const Transaction = require('../models/Transaction');
 const UserAccount = require('../models/UserAccount');
 const BookingServiceHistory = require('../models/BookingServiceHistory');
 const Feedback = require('../models/Feedback');
+const Voucher = require('../models/Voucher');
 const mongoose = require('mongoose');
 const { isEmailConfigured, sendBookingConfirmationEmail, sendBookingCancellationEmail, sendWalletRefundEmail } = require('../utils/mailer');
 
@@ -298,9 +299,10 @@ async function getMyBookings(req, res) {
       const canFeedback = isPaid && bDetails.some((d) => isDetailEnded(d) && !d.feedback);
 
       const statusMap = {
-        Booked: 'Confirmed',
-        'Cancel Request': 'Cancel Requested',
-        Cancel: 'Cancelled',
+        Active: 'Active',
+        'Cancel Request': 'Cancel Request',
+        Cancelled: 'Cancelled',
+        Ended: 'Ended',
       };
 
       const paymentStatusMap = {
@@ -397,6 +399,56 @@ async function getBookedSlots(req, res) {
   }
 }
 
+async function validateVoucher(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const { voucherCode, fieldId, grandTotal } = req.body;
+
+    if (!voucherCode || !fieldId) {
+      return res.status(400).json({ message: 'Missing voucherCode or fieldId' });
+    }
+
+    const now = new Date();
+    const voucher = await Voucher.findOne({
+      voucherName: voucherCode,
+      beginDate: { $lte: now },
+      endDate: { $gte: now },
+      quantity: { $gt: 0 },
+    }).lean();
+
+    if (!voucher) {
+      return res.status(400).json({ valid: false, message: 'Invalid or expired voucher' });
+    }
+
+    const isFieldApplicable = voucher.applicableFields?.some(
+      f => f.fieldID?.toString() === fieldId || f.fieldID === fieldId
+    );
+
+    if (!isFieldApplicable) {
+      return res.status(400).json({ valid: false, message: 'Voucher not applicable for this field' });
+    }
+
+    const discountPercent = voucher.discountValue || 0;
+    const maxDiscount = voucher.maxDiscount || 0;
+    let discountAmount = Math.floor(grandTotal * (discountPercent / 100));
+    
+    if (maxDiscount > 0 && discountAmount > maxDiscount) {
+      discountAmount = maxDiscount;
+    }
+
+    res.json({
+      valid: true,
+      discountAmount,
+      discountPercent,
+      maxDiscount,
+      voucherName: voucher.voucherName,
+    });
+  } catch (err) {
+    console.error('validateVoucher error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 async function createBooking(req, res) {
   const userId = req.user.sub || req.user.userId || req.user.id;
   const { fieldId, timeSlots, grandTotal } = req.body;
@@ -481,7 +533,7 @@ async function createBooking(req, res) {
       customerID: userId,
       totalPrice,
       statusPayment: 'Pending',
-      status: 'Booked',
+      status: 'Active',
     });
     await booking.save();
     console.log('Booking saved:', booking._id);
@@ -1132,20 +1184,20 @@ async function approveRefund(req, res) {
       );
       console.log('approveRefund - remainingActiveDetails count:', remainingActiveDetails.length);
       if (remainingActiveDetails.length === 0) {
-        console.log('approveRefund - all slots cancelled, setting status = Cancel');
-        booking.status = 'Cancel';
+        console.log('approveRefund - all slots cancelled, setting status = Cancelled');
+        booking.status = 'Cancelled';
         booking.statusPayment = 'Refunded';
         await booking.save();
       } else {
-        console.log('approveRefund - some slots remain, setting status = Booked');
-        booking.status = 'Booked';
+        console.log('approveRefund - some slots remain, setting status = Active');
+        booking.status = 'Active';
         booking.statusPayment = 'Completed';
         booking.refundDetailIds = [];
         await booking.save();
       }
     } else {
       console.log('approveRefund - isPartialCancel = false (full cancel)');
-      booking.status = 'Cancel';
+      booking.status = 'Cancelled';
       booking.statusPayment = 'Refunded';
       await booking.save();
 
@@ -1196,8 +1248,9 @@ async function rejectRefund(req, res) {
 
 module.exports = {
   getMyBookings,
-  getBookedSlots,
+getBookedSlots,
   createBooking,
+  validateVoucher,
   cancelBooking,
   cancelSlot,
   getFeedbackEligibility,
