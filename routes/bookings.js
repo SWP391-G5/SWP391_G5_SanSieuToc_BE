@@ -12,5 +12,6 @@ router.post('/feedback', authenticate, bookingController.createFeedback);
 router.get('/field/:fieldId/slots', bookingController.getBookedSlots);
 router.post('/', authenticate, bookingController.createBooking);
 router.put('/cancel/:bookingId', authenticate, bookingController.cancelBooking);
+router.put('/cancel/:bookingId/slot', authenticate, bookingController.cancelSlot);
 
 module.exports = router;

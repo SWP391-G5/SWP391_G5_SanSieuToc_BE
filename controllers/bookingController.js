@@ -39,6 +39,15 @@ function isDetailEnded(detail) {
   return false;
 }
 
+function formatTimeFromDate(date) {
+  if (!date) return '--:--';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '--:--';
+  const hours = d.getHours().toString().padStart(2, '0');
+  const minutes = d.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 async function deductWalletBalance(userId, amount, bookingId, ownerId) {
   console.log('=== deductWalletBalance called ===');
   console.log('userId:', userId, 'amount:', amount, 'bookingId:', bookingId, 'ownerId:', ownerId);
@@ -193,7 +202,10 @@ async function getMyBookings(req, res) {
       .lean();
 
     const detailIds = details.map(d => d._id);
-    const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
+    const serviceHistories = await BookingServiceHistory.find({ 
+      bookingDetailID: { $in: detailIds },
+      status: { $ne: 'Cancelled' }
+    }).lean();
     const feedbackRows = await Feedback.find({
       bookingDetailID: { $in: detailIds },
       isDeleted: false,
@@ -238,8 +250,8 @@ async function getMyBookings(req, res) {
         if (!groupedByDate[dateKey]) {
           groupedByDate[dateKey] = [];
         }
-        const startHour = new Date(d.startTime).getHours().toString().padStart(2, '0') + ':00';
-        const endHour = new Date(d.endTime).getHours().toString().padStart(2, '0') + ':00';
+        const startHour = formatTimeFromDate(d.startTime);
+        const endHour = formatTimeFromDate(d.endTime);
         groupedByDate[dateKey].push({
           start: startHour,
           end: endHour,
@@ -258,11 +270,11 @@ async function getMyBookings(req, res) {
         slots: groupedByDate[date]
       }));
 
-      // Combine all services from all details into one array
+      // Combine all services from active details (not cancelled)
       let servicesList = [];
       let servicesTotal = 0;
       for (const d of bDetails) {
-        if (d.services?.service?.length > 0) {
+        if (d.services?.service?.length > 0 && d.status !== 'Cancel') {
           servicesList = [...servicesList, ...d.services.service];
           servicesTotal += d.services.totalPriceSnapShot || 0;
         }
@@ -299,6 +311,22 @@ async function getMyBookings(req, res) {
         Cancel: 'Refunded',
       };
 
+      const allDetails = bDetails.map(d => {
+        const servicesList = d.services?.service || [];
+        const servicesTotal = d.services?.totalPriceSnapShot || 0;
+        console.log(`DEBUG allDetails - detailId: ${d._id}, hasServices: ${!!d.services}, servicesCount: ${servicesList.length}, servicesTotal: ${servicesTotal}`);
+        return {
+          id: d._id,
+          date: d.startTime ? new Date(d.startTime).toISOString().split('T')[0] : '',
+          startTime: d.startTime,
+          endTime: d.endTime,
+          status: d.status,
+          priceSnapShot: d.priceSnapShot || 0,
+          services: servicesList,
+          servicesTotal,
+        };
+      });
+
       return {
         id: b._id,
         fieldName,
@@ -308,6 +336,7 @@ async function getMyBookings(req, res) {
         date: firstDate,
         timeSlots,
         allDates,
+        allDetails,
         grandTotal: b.totalPrice,
         fieldTotal: b.fieldTotal || 0,
         services: uniqueServicesList,
@@ -337,17 +366,19 @@ async function getBookedSlots(req, res) {
       return res.status(400).json({ message: 'Date parameter is required' });
     }
 
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
+    const [year, month, day] = date.split('-').map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    console.log('getBookedSlots:', { fieldId, date, startOfDay, endOfDay });
 
     const bookedDetails = await BookingDetail.find({
       fieldID: fieldId,
       startTime: { $gte: startOfDay, $lte: endOfDay },
       status: { $ne: 'Cancel' },
     }).lean();
+
+    console.log('bookedDetails found:', bookedDetails.length, bookedDetails.map(d => ({ startTime: d.startTime, status: d.status })));
 
     const bookedSlots = bookedDetails.map(d => {
       const start = new Date(d.startTime);
@@ -417,7 +448,13 @@ async function createBooking(req, res) {
     if (typeof fieldImage !== 'string') fieldImage = String(fieldImage || '');
 
     for (const timeSlot of timeSlotsArr) {
-      const baseDate = req.body.date ? new Date(req.body.date) : new Date();
+      let baseDate;
+      if (req.body.date) {
+        const [y, m, d] = req.body.date.split('-').map(Number);
+        baseDate = new Date(y, m - 1, d);
+      } else {
+        baseDate = new Date();
+      }
       const [hours, minutes] = timeSlot.split(':').map(Number);
       const startTime = new Date(baseDate);
       startTime.setHours(hours, minutes || 0, 0, 0);
@@ -522,6 +559,84 @@ async function createBooking(req, res) {
   }
 }
 
+async function cancelSlot(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const { bookingId } = req.params;
+    const { bookingDetailIds, reason } = req.body;
+
+    if (!bookingDetailIds || !Array.isArray(bookingDetailIds) || bookingDetailIds.length === 0) {
+      return res.status(400).json({ message: 'bookingDetailIds is required' });
+    }
+
+    console.log('cancelSlot - bookingDetailIds:', bookingDetailIds);
+
+    const Booking = require('../models/Booking');
+    const BookingDetail = require('../models/BookingDetail');
+    const BookingServiceHistory = require('../models/BookingServiceHistory');
+    const Wallet = require('../models/Wallet');
+    const Transaction = require('../models/Transaction');
+    const Field = require('../models/Field');
+
+    const booking = await Booking.findOne({ _id: bookingId, customerID: userId });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    if (booking.status === 'Cancel') {
+      return res.status(400).json({ message: 'Booking already cancelled' });
+    }
+
+    if (booking.statusPayment !== 'Completed') {
+      return res.status(400).json({ message: 'Cannot cancel booking with pending payment' });
+    }
+
+    const detailsToCancel = await BookingDetail.find({ _id: { $in: bookingDetailIds } }).lean();
+    if (detailsToCancel.length === 0) {
+      return res.status(400).json({ message: 'No valid booking details found' });
+    }
+
+    console.log('cancelSlot - detailsToCancel:', JSON.stringify(detailsToCancel.map(d => ({ id: d._id, priceSnapShot: d.priceSnapShot }))));
+
+    const detailsToCancelIds = detailsToCancel.map(d => d._id.toString());
+    const allDetails = await BookingDetail.find({ bookingID: bookingId }).lean();
+    const remainingDetails = allDetails.filter(d => !detailsToCancelIds.includes(d._id.toString()));
+
+    let refundAmount = 0;
+
+    for (const detail of detailsToCancel) {
+      const fieldRefund = Math.floor((detail.priceSnapShot || 0) * 0.8);
+      refundAmount += fieldRefund;
+
+      const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: detail._id }).lean();
+      for (const sh of serviceHistories) {
+        refundAmount += sh.totalPriceSnapShot || 0;
+      }
+    }
+
+    booking.status = 'Cancel Request';
+    booking.statusPayment = 'Pending Refund';
+    booking.refundReason = reason || 'Customer requested cancellation';
+    booking.refundDetailIds = detailsToCancelIds;
+    await booking.save();
+
+    await BookingDetail.updateMany(
+      { _id: { $in: bookingDetailIds } },
+      { $set: { status: 'Cancel Request' } }
+    );
+
+    res.json({
+      message: `Yêu cầu hủy ${detailsToCancel.length} slot. Vui lòng chờ chủ sân xác nhận.`,
+      refundAmount,
+      cancelledSlots: detailsToCancelIds.length,
+      remainingSlots: remainingDetails.length
+    });
+  } catch (err) {
+    console.error('cancelSlot error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 async function cancelBooking(req, res) {
   try {
     const userId = req.user.sub || req.user.userId || req.user.id;
@@ -533,8 +648,8 @@ async function cancelBooking(req, res) {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    if (booking.status === 'Cancel Request' || booking.status === 'Cancel') {
-      return res.status(400).json({ message: 'Booking already has a cancellation request' });
+    if (booking.status === 'Cancel') {
+      return res.status(400).json({ message: 'Booking already cancelled' });
     }
 
     if (booking.statusPayment !== 'Completed') {
@@ -742,20 +857,86 @@ async function createFeedback(req, res) {
 async function getOwnerRefundRequests(req, res) {
   try {
     const ownerId = req.user.sub || req.user.id || req.user._id;
-    console.log('=== getOwnerRefundRequests ===');
-    const mongoose = require('mongoose');
     const Booking = require('../models/Booking');
     const BookingDetail = require('../models/BookingDetail');
+    const BookingServiceHistory = require('../models/BookingServiceHistory');
+    const Field = require('../models/Field');
+    const mongoose = require('mongoose');
 
-    const ObjectId = mongoose.Types.ObjectId;
-    const bookingIdToFind = "69e4793f9acecc873aa96561";
+    const ownerFields = await Field.find({ ownerID: ownerId, status: { $ne: 'Deleted' } }).lean();
+    if (!ownerFields.length) {
+      return res.json({ count: 0, refunds: [] });
+    }
+    const fieldIds = ownerFields.map(f => f._id.toString());
 
-    const detail = await BookingDetail.findOne({ bookingID: new ObjectId(bookingIdToFind) }).lean();
-    console.log('BookingDetail for', bookingIdToFind, ':', detail);
+    const details = await BookingDetail.find({ fieldID: { $in: fieldIds } }).lean();
+    if (!details.length) {
+      return res.json({ count: 0, refunds: [] });
+    }
+    const bookingIds = [...new Set(details.map(d => d.bookingID.toString()))];
 
-    const bookings = await Booking.find({ status: 'Cancel Request' }).lean();
-    console.log('Total Cancel Request:', bookings.length);
-    res.json({ count: bookings.length, refunds: bookings });
+    const bookings = await Booking.find({ 
+      _id: { $in: bookingIds },
+      status: 'Cancel Request'
+    }).lean();
+
+    const detailIds = details.map(d => d._id);
+    const serviceHistories = await BookingServiceHistory.find({ 
+      bookingDetailID: { $in: detailIds },
+      status: { $ne: 'Cancelled' }
+    }).lean();
+
+    const refunds = bookings.map(b => {
+      const isPartialCancel = b.refundDetailIds && b.refundDetailIds.length > 0;
+      console.log('getOwnerRefundRequests - b.refundDetailIds raw:', b.refundDetailIds);
+      
+      const bookingDetails = details.filter(d => d.bookingID.toString() === b._id.toString());
+      
+      console.log('getOwnerRefundRequests - booking:', b._id);
+      console.log('getOwnerRefundRequests - isPartialCancel:', isPartialCancel);
+      console.log('getOwnerRefundRequests - refundDetailIds:', b.refundDetailIds);
+      console.log('getOwnerRefundRequests - bookingDetails count:', bookingDetails.length);
+      
+      let serviceTotal = 0;
+      const bookingDetailIds = bookingDetails.map(d => d._id.toString());
+      const bookingServiceHistories = serviceHistories.filter(sh => 
+        bookingDetailIds.includes(sh.bookingDetailID.toString())
+      );
+      
+      let fieldRefund = 0;
+      
+      if (isPartialCancel) {
+        const refundDetailIds = b.refundDetailIds;
+        
+        for (const d of bookingDetails) {
+          if (refundDetailIds.includes(d._id.toString())) {
+            fieldRefund += Math.floor((d.priceSnapShot || 0) * 0.8);
+          }
+        }
+        
+        for (const sh of bookingServiceHistories) {
+          if (refundDetailIds.includes(sh.bookingDetailID.toString())) {
+            serviceTotal += sh.totalPriceSnapShot || 0;
+          }
+        }
+        console.log('getOwnerRefundRequests - fieldRefund (partial):', fieldRefund);
+      } else {
+        for (const sh of bookingServiceHistories) {
+          serviceTotal += sh.totalPriceSnapShot || 0;
+        }
+        fieldRefund = Math.floor(b.totalPrice * 0.8);
+      }
+
+      return {
+        ...b,
+        serviceTotalPrice: serviceTotal,
+        fieldRefundAmount: fieldRefund,
+        isPartialCancel,
+        cancelledSlotCount: isPartialCancel ? b.refundDetailIds.length : bookingDetails.length,
+      };
+    });
+
+    res.json({ count: refunds.length, refunds });
   } catch (err) {
     console.error('getOwnerRefundRequests error:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -768,43 +949,44 @@ async function approveRefund(req, res) {
     const ownerId = req.user.sub || req.user.id || req.user._id;
     console.log('approveRefund bookingId:', bookingId);
     const Booking = require('../models/Booking');
+    const BookingDetail = require('../models/BookingDetail');
+    const BookingServiceHistory = require('../models/BookingServiceHistory');
     const Wallet = require('../models/Wallet');
     const Transaction = require('../models/Transaction');
-    const BookingDetail = require('../models/BookingDetail');
+    const Field = require('../models/Field');
     const mongoose = require('mongoose');
 
     const booking = await Booking.findById(bookingId);
+    console.log('approveRefund - booking found:', !!booking);
+    console.log('approveRefund - booking.refundDetailIds:', booking?.refundDetailIds);
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    const refundAmount = Math.floor(booking.totalPrice * 0.8);
-    const customerId = booking.customerID;
-
-    let customerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(customerId), walletOwnerModel: 'UserAccount' });
-    if (!customerWallet) {
-      customerWallet = await Wallet.create({
-        walletOwnerId: new mongoose.Types.ObjectId(customerId),
-        walletOwnerModel: 'UserAccount',
-        balance: 0,
-      });
+    const allDetails = await BookingDetail.find({ bookingID: bookingId }).lean();
+    const fieldIds = allDetails.map(d => d.fieldID?.toString ? d.fieldID.toString() : d.fieldID);
+    const fields = await Field.find({ _id: { $in: fieldIds }, ownerID: ownerId, status: { $ne: 'Deleted' } }).lean();
+    if (!fields || fields.length === 0) {
+      return res.status(403).json({ message: 'Forbidden: Not your field' });
     }
 
-    const customerBalanceBefore = customerWallet.balance;
-    customerWallet.balance += refundAmount;
-    await customerWallet.save();
+    const isPartialCancel = booking.refundDetailIds && booking.refundDetailIds.length > 0;
+    console.log('approveRefund - isPartialCancel:', isPartialCancel);
+    console.log('approveRefund - refundDetailIds:', booking.refundDetailIds);
+    console.log('approveRefund - allDetails.length:', allDetails.length);
+    
+    const detailIdsToRefund = isPartialCancel 
+      ? booking.refundDetailIds 
+      : allDetails.map(d => d._id.toString());
 
-    await Transaction.create({
-      bookingID: bookingId,
-      fromWalletID: null,
-      toWalletID: customerWallet._id,
-      type: 'Refund',
-      amount: refundAmount,
-      balanceBefore: customerBalanceBefore,
-      balanceAfter: customerWallet.balance,
-      description: `Refund 80% for cancelled booking`,
-      bookingType: 'field',
-    });
+    console.log('approveRefund - detailIdsToRefund:', detailIdsToRefund);
+    
+    const details = allDetails.filter(d => detailIdsToRefund.includes(d._id.toString()));
+    console.log('approveRefund - details to refund count:', details.length);
+    console.log('approveRefund - details priceSnapShot:', details.map(d => d.priceSnapShot));
+    const customerId = booking.customerID;
+
+    let totalRefund = 0;
 
     let ownerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(ownerId), walletOwnerModel: 'Owner' });
     if (!ownerWallet) {
@@ -815,25 +997,153 @@ async function approveRefund(req, res) {
       });
     }
 
-    const ownerBalanceBefore = ownerWallet.balance;
-    ownerWallet.balance -= refundAmount;
-    await ownerWallet.save();
+    // Hoàn tiền field booking (80%) - dùng priceSnapShot
+    let fieldRefundAmount = 0;
+    for (const detail of details) {
+      const refund = Math.floor((detail.priceSnapShot || 0) * 0.8);
+      console.log('approveRefund - slot priceSnapShot:', detail.priceSnapShot, '-> refund:', refund);
+      fieldRefundAmount += refund;
+    }
+    console.log('approveRefund - total fieldRefundAmount:', fieldRefundAmount);
 
-    await Transaction.create({
-      bookingID: bookingId,
-      fromWalletID: ownerWallet._id,
-      toWalletID: null,
-      type: 'Refund',
-      amount: -refundAmount,
-      balanceBefore: ownerBalanceBefore,
-      balanceAfter: ownerWallet.balance,
-      description: `Refund 80% for cancelled booking`,
-      bookingType: 'field',
-    });
+    if (fieldRefundAmount > 0) {
+      // Trừ tiền owner wallet
+      const ownerBalanceBefore = ownerWallet.balance;
+      ownerWallet.balance -= fieldRefundAmount;
+      await ownerWallet.save();
 
-    booking.status = 'Cancel';
-    booking.statusPayment = 'Refunded';
-    await booking.save();
+      await Transaction.create({
+        bookingID: bookingId,
+        fromWalletID: ownerWallet._id,
+        toWalletID: null,
+        type: 'Refund',
+        amount: -fieldRefundAmount,
+        balanceBefore: ownerBalanceBefore,
+        balanceAfter: ownerWallet.balance,
+        description: 'Hoàn tiền cho khách hàng (80% tiền sân)',
+        bookingType: 'field',
+        ownerID: ownerId,
+      });
+
+      // Hoàn tiền vào ví customer
+      let customerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(customerId), walletOwnerModel: 'UserAccount' });
+      if (!customerWallet) {
+        customerWallet = await Wallet.create({
+          walletOwnerId: new mongoose.Types.ObjectId(customerId),
+          walletOwnerModel: 'UserAccount',
+          balance: 0,
+        });
+      }
+      const customerBalanceBefore = customerWallet.balance;
+      customerWallet.balance += fieldRefundAmount;
+      await customerWallet.save();
+      totalRefund += fieldRefundAmount;
+
+      await Transaction.create({
+        bookingID: bookingId,
+        fromWalletID: null,
+        toWalletID: customerWallet._id,
+        type: 'Refund',
+        amount: fieldRefundAmount,
+        balanceBefore: customerBalanceBefore,
+        balanceAfter: customerWallet.balance,
+        description: 'Hoàn tiền hủy sân (80%)',
+        bookingType: 'field',
+      });
+    }
+
+    // Hoàn tiền service bookings (100%)
+    const detailIds = details.map(d => d._id);
+    const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
+
+    for (const sh of serviceHistories) {
+      if (sh.totalPriceSnapShot > 0) {
+        // Trừ tiền owner wallet (100% service)
+        const ownerBalanceBefore = ownerWallet.balance;
+        ownerWallet.balance -= sh.totalPriceSnapShot;
+        await ownerWallet.save();
+
+        await Transaction.create({
+          bookingID: bookingId,
+          fromWalletID: ownerWallet._id,
+          toWalletID: null,
+          type: 'Refund',
+          amount: -sh.totalPriceSnapShot,
+          balanceBefore: ownerBalanceBefore,
+          balanceAfter: ownerWallet.balance,
+          description: 'Hoàn tiền cho khách hàng (100% tiền dịch vụ)',
+          bookingType: 'service',
+          ownerID: ownerId,
+        });
+
+        // Hoàn tiền vào ví customer
+        let customerWallet = await Wallet.findOne({ walletOwnerId: new mongoose.Types.ObjectId(customerId), walletOwnerModel: 'UserAccount' });
+        if (!customerWallet) {
+          customerWallet = await Wallet.create({
+            walletOwnerId: new mongoose.Types.ObjectId(customerId),
+            walletOwnerModel: 'UserAccount',
+            balance: 0,
+          });
+        }
+        const customerBalanceBefore = customerWallet.balance;
+        customerWallet.balance += sh.totalPriceSnapShot;
+        await customerWallet.save();
+        totalRefund += sh.totalPriceSnapShot;
+
+        await Transaction.create({
+          bookingID: bookingId,
+          fromWalletID: null,
+          toWalletID: customerWallet._id,
+          type: 'Refund',
+          amount: sh.totalPriceSnapShot,
+          balanceBefore: customerBalanceBefore,
+          balanceAfter: customerWallet.balance,
+          description: 'Hoàn tiền hủy dịch vụ (100%)',
+          bookingType: 'service',
+        });
+      }
+    }
+
+      if (isPartialCancel) {
+      console.log('approveRefund - isPartialCancel = true, processing partial');
+      const cancelledDetailObjectIds = detailIdsToRefund.map(id => new mongoose.Types.ObjectId(id));
+      await BookingDetail.updateMany(
+        { _id: { $in: cancelledDetailObjectIds } },
+        { $set: { status: 'Cancel' } }
+      );
+      
+      await BookingServiceHistory.updateMany(
+        { bookingDetailID: { $in: cancelledDetailObjectIds } },
+        { $set: { status: 'Cancel' } }
+      );
+      
+      const remainingActiveDetails = allDetails.filter(d => 
+        !detailIdsToRefund.includes(d._id.toString()) && d.status !== 'Cancel'
+      );
+      console.log('approveRefund - remainingActiveDetails count:', remainingActiveDetails.length);
+      if (remainingActiveDetails.length === 0) {
+        console.log('approveRefund - all slots cancelled, setting status = Cancel');
+        booking.status = 'Cancel';
+        booking.statusPayment = 'Refunded';
+        await booking.save();
+      } else {
+        console.log('approveRefund - some slots remain, setting status = Booked');
+        booking.status = 'Booked';
+        booking.statusPayment = 'Completed';
+        booking.refundDetailIds = [];
+        await booking.save();
+      }
+    } else {
+      console.log('approveRefund - isPartialCancel = false (full cancel)');
+      booking.status = 'Cancel';
+      booking.statusPayment = 'Refunded';
+      await booking.save();
+
+      await BookingDetail.updateMany(
+        { bookingID: booking._id },
+        { $set: { status: 'Cancel' } }
+      );
+    }
 
     const customer = await UserAccount.findById(customerId).lean();
     if (customer && isEmailConfigured()) {
@@ -841,7 +1151,7 @@ async function approveRefund(req, res) {
         await sendWalletRefundEmail({
           to: customer.email,
           name: customer.name,
-          amount: refundAmount,
+          amount: totalRefund,
           type: 'refund',
         });
       } catch (e) {
@@ -849,10 +1159,11 @@ async function approveRefund(req, res) {
       }
     }
 
-    res.json({ success: true, message: `Refund ${refundAmount} VND approved (80%)`, ownerBalance: ownerWallet.balance });
+    res.json({ success: true, message: `Refund ${totalRefund} VND approved (field 80% + service 100%)`, ownerBalance: ownerWallet.balance, totalRefund });
   } catch (err) {
-    console.error('approveRefund error:', err);
-    res.status(500).json({ message: 'Server error', error: err.message, stack: err.stack });
+    console.error('approveRefund error:', err.message);
+    console.error(err.stack);
+    res.status(500).json({ message: 'Server error: ' + err.message, error: err.message });
   }
 }
 
@@ -878,6 +1189,7 @@ module.exports = {
   getBookedSlots,
   createBooking,
   cancelBooking,
+  cancelSlot,
   getFeedbackEligibility,
   createFeedback,
   getOwnerRefundRequests,

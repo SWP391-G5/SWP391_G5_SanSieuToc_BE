@@ -22,6 +22,10 @@ const BookingSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    refundDetailIds: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );
