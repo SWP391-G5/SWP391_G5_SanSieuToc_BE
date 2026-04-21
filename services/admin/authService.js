@@ -62,8 +62,8 @@ async function issueAndSendVerificationCode(accountDoc) {
 }
 
 async function login(payload) {
-  const { username, emailOrUsername, password, role } = payload || {};
-  const rawUsername = isNonEmptyString(username) ? username : emailOrUsername;
+  const { username, password, role } = payload || {};
+  const rawUsername = username;
 
   if (!isNonEmptyString(rawUsername) || !isNonEmptyString(password)) {
     return { status: 400, body: { message: 'Vui lòng nhập username và mật khẩu.' } };
