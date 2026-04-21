@@ -133,6 +133,11 @@ async function bookServices(req, res) {
       return res.status(400).json({ message: 'Cannot add services to cancelled booking' });
     }
     
+    const minutesUntilSlot = (new Date(bookingDetail.startTime).getTime() - Date.now()) / (1000 * 60);
+    if (minutesUntilSlot < 10) {
+      return res.status(400).json({ message: 'Cannot book services within 10 minutes before slot starts' });
+    }
+    
     const newServices = services.map(s => ({
       serviceId: s.serviceId,
       serviceName: s.serviceName,
