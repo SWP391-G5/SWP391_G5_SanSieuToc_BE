@@ -5,6 +5,7 @@ const Field = require('../../models/Field');
 const Wallet = require('../../models/Wallet');
 const Transaction = require('../../models/Transaction');
 const UserAccount = require('../../models/UserAccount');
+const Service = require('../../models/Service');
 
 // GET /api/owner/bookings — Lấy danh sách booking của các sân thuộc Owner
 async function getBookingsForOwner(req, res) {
@@ -195,11 +196,22 @@ if (!ownerWallet) {
          });
       }
 
-      // Hoàn tiền service bookings (100%)
+      // Hoàn tiền service bookings (100%) và hoàn stock
       const detailIds = details.map(d => d._id);
       const serviceHistories = await BookingServiceHistory.find({ bookingDetailID: { $in: detailIds } }).lean();
       
       for (const sh of serviceHistories) {
+         // Hoàn stock cho từng service
+         if (sh.service && sh.service.length > 0) {
+            for (const s of sh.service) {
+               const service = await Service.findById(s.serviceId);
+               if (service) {
+                  service.stock += s.quantity;
+                  await service.save();
+               }
+            }
+         }
+         
          if (sh.totalPriceSnapShot > 0) {
             // Trừ tiền owner wallet (100% service)
             const ownerBalanceBefore = ownerWallet.balance;
