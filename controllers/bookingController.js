@@ -849,6 +849,7 @@ async function getFeedbackEligibility(req, res) {
       };
     });
 
+    const hasPendingSlots = slots.some((s) => !s.isEnded);
     const eligibleSlots = slots.filter((s) => s.isEnded && !s.hasFeedback);
     const submittedSlots = slots.filter((s) => s.isEnded && s.hasFeedback);
     const firstDetail = details[0] || {};
@@ -859,6 +860,8 @@ async function getFeedbackEligibility(req, res) {
         fieldId: toIdString(firstDetail.fieldID),
         fieldName: firstDetail.fieldName || '',
         isPaid,
+        hasAnySlots: details.length > 0,
+        hasPendingSlots,
         canSubmit: isPaid && eligibleSlots.length > 0,
         eligibleSlots,
         submittedSlots,
@@ -886,7 +889,7 @@ async function getFeedbackEligibilityByField(req, res) {
     }).lean();
 
     if (!bookings.length) {
-      return res.json({ item: { fieldId, reviewableSlots: [] } });
+      return res.json({ item: { fieldId, isPaid: true, hasAnySlots: false, hasPendingSlots: false, reviewableSlots: [] } });
     }
 
     const bIds = bookings.map((b) => b._id);
@@ -897,7 +900,7 @@ async function getFeedbackEligibilityByField(req, res) {
     }).lean();
 
     if (!details.length) {
-      return res.json({ item: { fieldId, reviewableSlots: [] } });
+      return res.json({ item: { fieldId, isPaid: true, hasAnySlots: false, hasPendingSlots: false, reviewableSlots: [] } });
     }
 
     const dIds = details.map((d) => d._id);
@@ -911,7 +914,7 @@ async function getFeedbackEligibilityByField(req, res) {
       fbMap.set(String(f.bookingDetailID), f);
     }
 
-    const slots = details
+    const slotsAll = details
       .map((d) => {
         const fb = fbMap.get(String(d._id));
         const ended = isDetailEnded(d);
@@ -931,14 +934,18 @@ async function getFeedbackEligibilityByField(req, res) {
             : null,
         };
       })
-      .filter((s) => s.isEnded)
       .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+    const hasPendingSlots = slotsAll.some((s) => !s.isEnded);
+    const slotsEnded = slotsAll.filter((s) => s.isEnded);
 
     return res.json({
       item: {
         fieldId,
         isPaid: true,
-        reviewableSlots: slots,
+        hasAnySlots: details.length > 0,
+        hasPendingSlots,
+        reviewableSlots: slotsEnded,
       },
     });
   } catch (err) {
