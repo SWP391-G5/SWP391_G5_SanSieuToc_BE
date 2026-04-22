@@ -726,27 +726,32 @@ async function getHotFields(managerId, query = {}) {
   ]);
 
   // Hydrate fieldName + ownerID from scoped fields only (double safety)
-  const rowFieldIds = rows.map((r) => String(r._id));
+  // NOTE: BookingDetail.fieldID is Mixed, so group _id can be ObjectId OR string.
+  // We normalize both to string for map join.
   const scopedFieldIdStrings = fieldIds.map((x) => String(x));
   const allowSet = new Set(scopedFieldIdStrings);
-  const safeFieldIds = rowFieldIds.filter((id) => allowSet.has(String(id)) && mongoose.isValidObjectId(String(id)));
 
-  const fields = await Field.find({ _id: { $in: safeFieldIds } })
+  const fieldMeta = await Field.find({ _id: { $in: fieldIds } })
     .select('_id fieldName ownerID')
     .lean();
-  const metaById = new Map(fields.map((f) => [String(f._id), { fieldName: f.fieldName, ownerId: f.ownerID ? String(f.ownerID) : '' }]));
+  const metaById = new Map(
+    fieldMeta.map((f) => [String(f._id), { fieldName: f.fieldName, ownerId: f.ownerID ? String(f.ownerID) : '' }])
+  );
 
-  const items = rows
+  const items = (rows || [])
     .map((r) => {
-      const meta = metaById.get(String(r._id)) || { fieldName: '', ownerId: '' };
+      const fieldId = String(r._id);
+      if (!allowSet.has(fieldId)) return null;
+
+      const meta = metaById.get(fieldId) || { fieldName: '', ownerId: '' };
       return {
-        fieldId: String(r._id),
+        fieldId,
         fieldName: meta.fieldName || '',
         ownerId: meta.ownerId || '',
         bookingsCount: r.bookingsCount || 0,
       };
     })
-    .filter((x) => allowSet.has(String(x.fieldId)));
+    .filter(Boolean);
 
   return {
     status: 200,
