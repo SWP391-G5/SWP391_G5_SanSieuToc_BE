@@ -204,7 +204,7 @@ async function getMyBookings(req, res) {
       .lean();
 
     const detailIds = details.map(d => d._id);
-    const serviceHistories = await BookingServiceHistory.find({ 
+    const serviceHistories = await BookingServiceHistory.find({
       bookingDetailID: { $in: detailIds },
       status: { $ne: 'Cancelled' }
     }).lean();
@@ -335,12 +335,12 @@ async function getMyBookings(req, res) {
           servicesTotal,
           feedback: d.feedback
             ? {
-                id: String(d.feedback._id),
-                rate: d.feedback.rate,
-                content: d.feedback.content || '',
-                createdAt: d.feedback.createdAt,
-                updatedAt: d.feedback.updatedAt,
-              }
+              id: String(d.feedback._id),
+              rate: d.feedback.rate,
+              content: d.feedback.content || '',
+              createdAt: d.feedback.createdAt,
+              updatedAt: d.feedback.updatedAt,
+            }
             : null,
         };
       });
@@ -448,7 +448,7 @@ async function validateVoucher(req, res) {
     const discountPercent = voucher.discountValue || 0;
     const maxDiscount = voucher.maxDiscount || 0;
     let discountAmount = Math.floor(grandTotal * (discountPercent / 100));
-    
+
     if (maxDiscount > 0 && discountAmount > maxDiscount) {
       discountAmount = maxDiscount;
     }
@@ -468,7 +468,7 @@ async function validateVoucher(req, res) {
 
 async function createBooking(req, res) {
   const userId = req.user.sub || req.user.userId || req.user.id;
-  const { fieldId, timeSlots, grandTotal } = req.body;
+  const { fieldId, timeSlots, grandTotal, voucherCode } = req.body;
 
   console.log('=== CREATE BOOKING START ===');
   console.log('Full request body:', JSON.stringify(req.body));
@@ -551,9 +551,29 @@ async function createBooking(req, res) {
       totalPrice,
       statusPayment: 'Pending',
       status: 'Active',
+      voucherCode: voucherCode || '',
     });
     await booking.save();
     console.log('Booking saved:', booking._id);
+
+    if (voucherCode) {
+      const now = new Date();
+      const updatedVoucher = await Voucher.findOneAndUpdate(
+        {
+          voucherName: voucherCode,
+          quantity: { $gt: 0 },
+          beginDate: { $lte: now },
+          endDate: { $gte: now }
+        },
+        { $inc: { quantity: -1 } },
+        { new: true }
+      );
+      if (updatedVoucher) {
+        console.log(`Voucher decremented: ${voucherCode}, remaining: ${updatedVoucher.quantity}`);
+      } else {
+        console.log(`Failed to apply voucher or ran out of stock: ${voucherCode}`);
+      }
+    }
 
     for (const detail of slotDetails) {
       detail.bookingID = booking._id;
@@ -841,11 +861,11 @@ async function getFeedbackEligibility(req, res) {
         hasFeedback: !!feedback,
         feedback: feedback
           ? {
-              id: String(feedback._id),
-              rate: feedback.rate,
-              content: feedback.content || '',
-              createdAt: feedback.createdAt,
-            }
+            id: String(feedback._id),
+            rate: feedback.rate,
+            content: feedback.content || '',
+            createdAt: feedback.createdAt,
+          }
           : null,
       };
     });
@@ -924,11 +944,11 @@ async function getFeedbackEligibilityByField(req, res) {
           hasFeedback: !!fb,
           feedback: fb
             ? {
-                id: String(fb._id),
-                rate: fb.rate,
-                content: fb.content || '',
-                createdAt: fb.createdAt,
-              }
+              id: String(fb._id),
+              rate: fb.rate,
+              content: fb.content || '',
+              createdAt: fb.createdAt,
+            }
             : null,
         };
       })
@@ -1088,9 +1108,9 @@ async function deleteFeedback(req, res) {
 
     const detail = await BookingDetail.findById(feedback.bookingDetailID).lean();
     if (!detail) {
-       // If detail is gone, still allow delete if they are the owner? 
-       // Better to check feedback ownership directly if we stored it, but we didn't.
-       // We rely on detail -> booking -> customerID
+      // If detail is gone, still allow delete if they are the owner? 
+      // Better to check feedback ownership directly if we stored it, but we didn't.
+      // We rely on detail -> booking -> customerID
       return res.status(404).json({ message: 'Booking detail not found.' });
     }
 
@@ -1136,13 +1156,13 @@ async function getOwnerRefundRequests(req, res) {
     }
     const bookingIds = [...new Set(details.map(d => d.bookingID.toString()))];
 
-    const bookings = await Booking.find({ 
+    const bookings = await Booking.find({
       _id: { $in: bookingIds },
       status: 'Cancel Request'
     }).lean();
 
     const detailIds = details.map(d => d._id);
-    const serviceHistories = await BookingServiceHistory.find({ 
+    const serviceHistories = await BookingServiceHistory.find({
       bookingDetailID: { $in: detailIds },
       status: { $ne: 'Cancelled' }
     }).lean();
@@ -1150,31 +1170,31 @@ async function getOwnerRefundRequests(req, res) {
     const refunds = bookings.map(b => {
       const isPartialCancel = b.refundDetailIds && b.refundDetailIds.length > 0;
       console.log('getOwnerRefundRequests - b.refundDetailIds raw:', b.refundDetailIds);
-      
+
       const bookingDetails = details.filter(d => d.bookingID.toString() === b._id.toString());
-      
+
       console.log('getOwnerRefundRequests - booking:', b._id);
       console.log('getOwnerRefundRequests - isPartialCancel:', isPartialCancel);
       console.log('getOwnerRefundRequests - refundDetailIds:', b.refundDetailIds);
       console.log('getOwnerRefundRequests - bookingDetails count:', bookingDetails.length);
-      
+
       let serviceTotal = 0;
       const bookingDetailIds = bookingDetails.map(d => d._id.toString());
-      const bookingServiceHistories = serviceHistories.filter(sh => 
+      const bookingServiceHistories = serviceHistories.filter(sh =>
         bookingDetailIds.includes(sh.bookingDetailID.toString())
       );
-      
+
       let fieldRefund = 0;
-      
+
       if (isPartialCancel) {
         const refundDetailIds = b.refundDetailIds;
-        
+
         for (const d of bookingDetails) {
           if (refundDetailIds.includes(d._id.toString())) {
             fieldRefund += Math.floor((d.priceSnapShot || 0) * 0.8);
           }
         }
-        
+
         for (const sh of bookingServiceHistories) {
           if (refundDetailIds.includes(sh.bookingDetailID.toString())) {
             serviceTotal += sh.totalPriceSnapShot || 0;
@@ -1235,13 +1255,13 @@ async function approveRefund(req, res) {
     console.log('approveRefund - isPartialCancel:', isPartialCancel);
     console.log('approveRefund - refundDetailIds:', booking.refundDetailIds);
     console.log('approveRefund - allDetails.length:', allDetails.length);
-    
-    const detailIdsToRefund = isPartialCancel 
-      ? booking.refundDetailIds 
+
+    const detailIdsToRefund = isPartialCancel
+      ? booking.refundDetailIds
       : allDetails.map(d => d._id.toString());
 
     console.log('approveRefund - detailIdsToRefund:', detailIdsToRefund);
-    
+
     const details = allDetails.filter(d => detailIdsToRefund.includes(d._id.toString()));
     console.log('approveRefund - details to refund count:', details.length);
     console.log('approveRefund - details priceSnapShot:', details.map(d => d.priceSnapShot));
@@ -1376,20 +1396,20 @@ async function approveRefund(req, res) {
       }
     }
 
-      if (isPartialCancel) {
+    if (isPartialCancel) {
       console.log('approveRefund - isPartialCancel = true, processing partial');
       const cancelledDetailObjectIds = detailIdsToRefund.map(id => new mongoose.Types.ObjectId(id));
       await BookingDetail.updateMany(
         { _id: { $in: cancelledDetailObjectIds } },
         { $set: { status: 'Cancel' } }
       );
-      
+
       await BookingServiceHistory.updateMany(
         { bookingDetailID: { $in: cancelledDetailObjectIds } },
         { $set: { status: 'Cancel' } }
       );
-      
-      const remainingActiveDetails = allDetails.filter(d => 
+
+      const remainingActiveDetails = allDetails.filter(d =>
         !detailIdsToRefund.includes(d._id.toString()) && d.status !== 'Cancel'
       );
       console.log('approveRefund - remainingActiveDetails count:', remainingActiveDetails.length);
@@ -1458,7 +1478,7 @@ async function rejectRefund(req, res) {
 
 module.exports = {
   getMyBookings,
-getBookedSlots,
+  getBookedSlots,
   createBooking,
   validateVoucher,
   cancelBooking,

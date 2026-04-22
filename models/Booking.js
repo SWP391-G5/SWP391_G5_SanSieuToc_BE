@@ -30,6 +30,10 @@ const BookingSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    voucherCode: {
+      type: String,
+      default: '',
+    },
   },
   { timestamps: true }
 );
