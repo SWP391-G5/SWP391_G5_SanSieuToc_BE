@@ -38,6 +38,17 @@ function escapeRegex(input) {
    return String(input).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function parseTimeToMinutes(value) {
+   const s = String(value || '').trim();
+   const parts = s.split(':');
+   if (parts.length !== 2) return null;
+   const h = Number(parts[0]);
+   const m = Number(parts[1]);
+   if (Number.isNaN(h) || Number.isNaN(m)) return null;
+   if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+   return h * 60 + m;
+}
+
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
 /**
@@ -133,6 +144,18 @@ async function createField(req, res) {
    const slotDurationNumber = Number(slotDuration);
    if (Number.isNaN(slotDurationNumber) || slotDurationNumber <= 0) {
       return res.status(400).json({ message: 'Thời lượng slot không hợp lệ.' });
+   }
+   if (slotDurationNumber % 30 !== 0) {
+      return res.status(400).json({ message: 'Thời lượng slot phải là bội số của 30 phút.' });
+   }
+
+   const openingMinutes = parseTimeToMinutes(openingTimeTrimmed);
+   const closingMinutes = parseTimeToMinutes(closingTimeTrimmed);
+   if (openingMinutes === null || closingMinutes === null) {
+      return res.status(400).json({ message: 'Giờ mở/đóng cửa không hợp lệ.' });
+   }
+   if (closingMinutes <= openingMinutes) {
+      return res.status(400).json({ message: 'Giờ đóng cửa phải lớn hơn giờ mở cửa.' });
    }
 
    const duplicate = await Field.findOne({
@@ -231,6 +254,9 @@ async function updateField(req, res) {
       if (Number.isNaN(slotDurationNumber) || slotDurationNumber <= 0) {
          return res.status(400).json({ message: 'Thời lượng slot không hợp lệ.' });
       }
+      if (slotDurationNumber % 30 !== 0) {
+         return res.status(400).json({ message: 'Thời lượng slot phải là bội số của 30 phút.' });
+      }
       field.slotDuration = slotDurationNumber;
    }
    if (openingTime !== undefined) {
@@ -242,6 +268,17 @@ async function updateField(req, res) {
       const nextClosing = String(closingTime).trim();
       if (!nextClosing) return res.status(400).json({ message: 'Giờ đóng cửa là bắt buộc.' });
       field.closingTime = nextClosing;
+   }
+
+   if (openingTime !== undefined || closingTime !== undefined) {
+      const openingMinutes = parseTimeToMinutes(field.openingTime);
+      const closingMinutes = parseTimeToMinutes(field.closingTime);
+      if (openingMinutes === null || closingMinutes === null) {
+         return res.status(400).json({ message: 'Giờ mở/đóng cửa không hợp lệ.' });
+      }
+      if (closingMinutes <= openingMinutes) {
+         return res.status(400).json({ message: 'Giờ đóng cửa phải lớn hơn giờ mở cửa.' });
+      }
    }
    if (utilities !== undefined) {
       field.utilities = Array.isArray(utilities)
