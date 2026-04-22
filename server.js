@@ -19,18 +19,36 @@ app.use(cors({
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    
-    // Start cron jobs after DB connection
-    const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob, startWithdrawJob } = require('./utils/cronJobs');
-    startAutoCompleteJob();
-    startOwnerDeletionJob();
-    startManagerDeletionJob();
-    startWithdrawJob();
+const mongoUri = process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error('MONGO_URI is not set. Check BE/.env and restart the server.');
+} else {
+  // DNS/SRV fix for MongoDB Atlas on some Windows networks
+  const dns = require('dns');
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+    if (typeof dns.setDefaultResultOrder === 'function') {
+      dns.setDefaultResultOrder('ipv4first');
+    }
+  } catch (err) {
+    console.warn('Could not set custom DNS servers:', err.message);
+  }
+
+  mongoose.connect(mongoUri, {
+    serverSelectionTimeoutMS: 20000,
   })
-  .catch(err => console.error('MongoDB connection error:', err));
+    .then(() => {
+      console.log('Connected to MongoDB');
+
+      // Start cron jobs after DB connection
+      const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob, startWithdrawJob } = require('./utils/cronJobs');
+      startAutoCompleteJob();
+      startOwnerDeletionJob();
+      startManagerDeletionJob();
+      startWithdrawJob();
+    })
+    .catch(err => console.error('MongoDB connection error:', err));
+}
 
 // Load all models
 require('./models');
