@@ -3,7 +3,10 @@ const cron = require('node-cron');
 const Role = require('../models/Role');
 const AdminAccount = require('../models/AdminAccount');
 const UserAccount = require('../models/UserAccount');
+const Booking = require('../models/Booking');
 const BookingDetail = require('../models/BookingDetail');
+const Transaction = require('../models/Transaction');
+const Wallet = require('../models/Wallet');
 
 let autoCompleteJobStarted = false;
 function startAutoCompleteJob() {
@@ -21,11 +24,31 @@ function startAutoCompleteJob() {
             status: 'Active',
             endTime: { $lte: now }
           },
-          { $set: { status: 'End' } }
+          { $set: { status: 'Ended' } }
         );
         
         if (result.modifiedCount > 0) {
-          console.log(`[AutoComplete] Updated ${result.modifiedCount} booking details to End status`);
+          console.log(`[AutoComplete] Updated ${result.modifiedCount} booking details to Ended status`);
+          
+          const endedDetails = await BookingDetail.find(
+            { status: 'Ended' }
+          ).select('bookingID');
+          
+          const bookingIds = [...new Set(endedDetails.map(d => d.bookingID.toString()))];
+          
+          for (const bookingId of bookingIds) {
+            const activeDetails = await BookingDetail.countDocuments({
+              bookingID: bookingId,
+              status: 'Active'
+            });
+            
+            if (activeDetails === 0) {
+              await Booking.findByIdAndUpdate(bookingId, {
+                status: 'Ended',
+                finalDate: now
+              });
+            }
+          }
         }
       } catch (err) {
         console.error('[AutoComplete] Error:', err.message);
@@ -112,4 +135,55 @@ function startManagerDeletionJob() {
   );
 }
 
-module.exports = { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob };
+module.exports = { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob, startWithdrawJob };
+
+let withdrawJobStarted = false;
+function startWithdrawJob() {
+  if (withdrawJobStarted) return;
+  withdrawJobStarted = true;
+
+  cron.schedule(
+    '*/15 * * * *', // Chạy mỗi 15 phút
+    async () => {
+      try {
+        const now = new Date();
+        
+        const pendingWithdraws = await Transaction.find({
+          type: 'Withdraw',
+          withdrawStatus: 'Pending',
+          scheduledAt: { $lte: now }
+        }).lean();
+
+        if (pendingWithdraws.length > 0) {
+          console.log(`[Withdraw] Processing ${pendingWithdraws.length} pending withdrawals`);
+          
+          for (const withdraw of pendingWithdraws) {
+            try {
+              // Trừ tiền từ wallet
+              const wallet = await Wallet.findById(withdraw.fromWalletID);
+              if (wallet) {
+                const balanceBefore = wallet.balance;
+                wallet.balance += withdraw.amount; // amount âm nên sẽ trừ
+                await wallet.save();
+
+                // Update transaction status
+                await Transaction.findByIdAndUpdate(withdraw._id, {
+                  withdrawStatus: 'Completed',
+                  balanceAfter: wallet.balance,
+                });
+
+                console.log(`[Withdraw] Completed withdrawal ${withdraw._id}: ${withdraw.amount} VND`);
+              }
+            } catch (err) {
+              console.error(`[Withdraw] Error processing ${withdraw._id}:`, err.message);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Withdraw] Error:', err.message);
+      }
+    },
+    { timezone: 'Asia/Ho_Chi_Minh' }
+  );
+  console.log('[Cron] Withdraw job started - processes pending withdrawals after 12h');
+}

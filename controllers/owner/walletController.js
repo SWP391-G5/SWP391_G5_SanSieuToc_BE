@@ -23,9 +23,9 @@ exports.getMyWallet = asyncHandler(async (req, res) => {
 
 exports.getMyTransactions = asyncHandler(async (req, res) => {
   const ownerId = req.user.sub || req.user.id || req.user._id;
-  const { limit, bookingType } = req.query;
+  const { limit, bookingType, type } = req.query;
 
-  const transactions = await getOwnerTransactions(ownerId, parseInt(limit) || 20, bookingType);
+  const transactions = await getOwnerTransactions(ownerId, parseInt(limit) || 20, type, bookingType);
 
   const formatted = transactions.map(t => ({
     id: t._id,
@@ -36,6 +36,8 @@ exports.getMyTransactions = asyncHandler(async (req, res) => {
     description: t.description,
     bookingID: t.bookingID,
     createdAt: t.createdAt,
+    withdrawStatus: t.withdrawStatus,
+    scheduledAt: t.scheduledAt,
   }));
 
   res.json({ transactions: formatted });
@@ -72,6 +74,14 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
   const ownerId = req.user.sub || req.user.id || req.user._id;
   const { amount, bankName, accountNumber, accountName } = req.body;
 
+  if (!accountNumber || !/^\d{1,15}$/.test(accountNumber)) {
+    return res.status(400).json({ message: 'Số tài khoản tối đa 15 chữ số' });
+  }
+
+  if (!accountName || /\d/.test(accountName)) {
+    return res.status(400).json({ message: 'Tên người thụ hưởng không được chứa số' });
+  }
+
   const withdrawAmount = Number(amount);
   const MIN_AMOUNT = 100000;
   const MAX_AMOUNT = 10000000;
@@ -91,29 +101,30 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Số dư không đủ' });
   }
 
-  const balanceBefore = wallet.balance;
-  wallet.balance -= withdrawAmount;
-  await wallet.save();
+  // Không trừ tiền ngay, chỉ tạo yêu cầu chờ 24h
+  const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 tiếng sau
 
-  await Transaction.create({
+  const transaction = await Transaction.create({
     fromWalletID: wallet._id,
     toWalletID: null,
     type: 'Withdraw',
     amount: -withdrawAmount,
-    balanceBefore: balanceBefore,
-    balanceAfter: wallet.balance,
+    balanceBefore: wallet.balance,
+    balanceAfter: wallet.balance, // chưa trừ
     description: `Rút tiền về ${bankName} - STK: ${accountNumber}`,
     bookingType: 'field',
     ownerID: ownerId,
     bankName,
     accountNumber,
     accountName,
-    withdrawStatus: 'Completed',
+    withdrawStatus: 'Pending',
+    scheduledAt: scheduledAt,
   });
 
   res.json({
     success: true,
-    message: `Đã rút ${formatVnd(withdrawAmount)} thành công`,
+    message: `Yêu cầu rút ${formatVnd(withdrawAmount)} đang chờ xử lý. Sẽ hoàn tất sau 12 tiếng.`,
+    transaction: transaction,
     newBalance: wallet.balance,
   });
 });

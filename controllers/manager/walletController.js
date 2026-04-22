@@ -54,6 +54,14 @@ exports.createWithdrawRequest = async (req, res) => {
     const managerId = req.user.sub || req.user.id || req.user._id;
     const { amount, bankName, accountNumber, accountName } = req.body;
 
+    if (!accountNumber || !/^\d{1,15}$/.test(accountNumber)) {
+      return res.status(400).json({ message: 'Số tài khoản tối đa 15 chữ số' });
+    }
+
+    if (!accountName || /\d/.test(accountName)) {
+      return res.status(400).json({ message: 'Tên người thụ hưởng không được chứa số' });
+    }
+
     const withdrawAmount = Number(amount);
     const MIN_AMOUNT = 100000;
     const MAX_AMOUNT = 10000000;

@@ -3,16 +3,12 @@ const nodemailer = require('nodemailer');
 let cachedTransporter;
 
 const isEmailConfigured = () => {
-  const emailUser = process.env.EMAIL_USER;
-  const emailPassword = process.env.EMAIL_PASSWORD;
+  const emailUser = String(process.env.EMAIL_USER || '').trim();
+  const emailPassword = String(process.env.EMAIL_PASSWORD || '').trim();
 
-  return Boolean(
-    emailUser &&
-    emailPassword &&
-    emailUser !== 'your-email@gmail.com' &&
-    emailPassword !== 'your-app-password' &&
-    emailUser.includes('@')
-  );
+  // Only validate presence + basic email shape.
+  // Do NOT block passwords that contain spaces (Gmail App Password often contains spaces).
+  return Boolean(emailUser && emailPassword && emailUser.includes('@'));
 };
 
 /**
@@ -404,6 +400,65 @@ async function sendOwnerDeletionScheduledEmail({ to, name, scheduledAt, adminEma
   });
 }
 
+async function sendFeedbackDeletionNoticeEmail({ to, name, fieldName, feedbackContent, reason }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'Sân Siêu Tốc - Thông báo Feedback vi phạm';
+  const safeName = name || 'bạn';
+  const safeFieldName = fieldName || 'sân';
+  const safeReason = reason || 'Vi phạm quy định cộng đồng.';
+  const safeContent = String(feedbackContent || '').trim();
+
+  const text = [
+    `Xin chào ${safeName},`,
+    '',
+    'Feedback của bạn đã bị xóa do vi phạm quy định cộng đồng.',
+    '',
+    `Sân: ${safeFieldName}`,
+    safeContent ? `Nội dung feedback: ${safeContent}` : null,
+    `Lý do: ${safeReason}`,
+    '',
+    'Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên để được hỗ trợ.',
+    '',
+    'Trân trọng,',
+    'Sân Siêu Tốc',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  // HTML theme: reuse the layout style of booking confirmation email
+  // (gradient header + light container + left border card)
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #ffb86b, #ff4d4d); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #5a0b0b; margin: 0;">Sân Siêu Tốc</h1>
+        <p style="color: #5a0b0b; margin: 5px 0 0;">Thông báo Feedback vi phạm</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
+        <p>Xin chào <strong>${safeName}</strong>,</p>
+        <p>Feedback của bạn đã bị xóa do vi phạm quy định cộng đồng.</p>
+
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ff4d4d;">
+          <h3 style="margin: 0 0 10px; color: #333;">Chi tiết</h3>
+          <p style="margin: 5px 0;"><strong>Sân:</strong> ${safeFieldName}</p>
+          ${safeContent ? `<p style="margin: 5px 0;"><strong>Nội dung feedback:</strong> ${safeContent}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Lý do:</strong> <span style="color: #ff4d4d; font-weight: bold;">${safeReason}</span></p>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên để được hỗ trợ.</p>
+        <p style="color: #666; font-size: 14px; margin-top: 14px;">Trân trọng,<br/>Sân Siêu Tốc</p>
+      </div>
+    </div>
+  `;
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
 module.exports = {
   isEmailConfigured,
   createTransporter,
@@ -416,4 +471,5 @@ module.exports = {
   sendWalletRefundEmail,
   sendManagerDeletionNoticeEmail,
   sendOwnerDeletionScheduledEmail,
+  sendFeedbackDeletionNoticeEmail,
 };

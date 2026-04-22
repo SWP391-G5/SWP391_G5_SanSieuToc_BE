@@ -136,7 +136,23 @@ function validateCreatePayload(payload) {
 async function listManagers() {
   const roleId = await getRoleIdByName('Manager');
   const accounts = await AdminAccount.find({ roleID: roleId }).populate('roleID').sort({ createdAt: -1 });
-  return { status: 200, body: { items: accounts.map(normalizeAdminAccount) } };
+
+  const ownerRoleId = await getRoleIdByName('Owner');
+  const ownerCounts = await UserAccount.aggregate([
+    { $match: { roleID: ownerRoleId, managerID: { $ne: null } } },
+    { $group: { _id: '$managerID', count: { $sum: 1 } } },
+  ]);
+  const ownerCountMap = new Map(ownerCounts.map((x) => [String(x._id), Number(x.count || 0)]));
+
+  return {
+    status: 200,
+    body: {
+      items: accounts.map((doc) => ({
+        ...normalizeAdminAccount(doc),
+        ownersCount: ownerCountMap.get(String(doc._id)) || 0,
+      })),
+    },
+  };
 }
 
 async function createManager(payload) {
@@ -350,13 +366,21 @@ async function deleteManager(id, options = {}) {
   const ownerRoleId = await getRoleIdByName('Owner');
   const ownersCount = await UserAccount.countDocuments({ roleID: ownerRoleId, managerID: account._id });
   if (ownersCount > 0) {
+    if (!options?.reassignToManagerID) {
+      return {
+        status: 400,
+        body: {
+          message: 'Manager đang quản lý Owner. Vui lòng chọn Manager khác để gán lại trước khi xóa.',
+        },
+      };
+    }
+
     const targetManagerId = await resolveReassignManagerId(account._id, options?.reassignToManagerID);
     if (!targetManagerId) {
       return {
         status: 400,
         body: {
-          message:
-            'Không thể xóa Manager vì đang quản lý Owner. Vui lòng tạo/kích hoạt ít nhất 1 Manager khác để gán lại.',
+          message: 'Manager nhận bàn giao không hợp lệ hoặc không hoạt động. Vui lòng chọn Manager khác.',
         },
       };
     }

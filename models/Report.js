@@ -7,10 +7,14 @@ const ReportSchema = new mongoose.Schema(
       ref: 'UserAccount',
       required: true,
     },
+    targetType: {
+      type: String,
+      enum: ['Customer', 'System'],
+      default: 'Customer',
+    },
     targetID: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'UserAccount',
-      required: true,
     },
     reportType: { type: String, required: true, trim: true, maxlength: 100 },
     description: { type: String, required: true, trim: true, maxlength: 5000 },

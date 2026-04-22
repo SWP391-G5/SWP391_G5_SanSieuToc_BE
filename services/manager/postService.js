@@ -394,9 +394,17 @@ async function updateManagerOwnedPost(postId, adminId, payload) {
     post.postName = payload.postName !== undefined ? String(payload.postName) : post.postName;
     post.postContent = payload.postContent !== undefined ? String(payload.postContent) : post.postContent;
     post.postImage = finalUrls.length > 0 ? finalUrls : post.postImage;
-    if ((payload?.postTags ?? payload?.tags ?? payload?.tag) !== undefined) {
+
+    // Tags update (optional)
+    // - Accept: postTags (multipart append), tags, or tag
+    // - Normalize: trim + unique, cap length (normalizeTags)
+    // - If caller provides the field (even empty), we treat it as an explicit update.
+    const tagsInput = payload?.postTags ?? payload?.tags ?? payload?.tag;
+    if (tagsInput !== undefined) {
+      const nextTags = normalizeTags(tagsInput);
       post.postTags = nextTags;
     }
+
     post.status = requestedStatus || post.status;
 
     await post.save();

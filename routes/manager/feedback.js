@@ -24,4 +24,7 @@ router.get('/summary', asyncHandler(feedbackController.getSummary));
 // DELETE /api/manager/feedback/:id  body: { reason }
 router.delete('/:id', asyncHandler(feedbackController.deleteFeedback));
 
+// PATCH /api/manager/feedback/:id/restore
+router.patch('/:id/restore', asyncHandler(feedbackController.restoreFeedback));
+
 module.exports = router;

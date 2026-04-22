@@ -24,28 +24,52 @@ function normalizeText(s) {
 
 function inferCity(doc) {
   const direct = String(doc?.city || '').trim();
-  if (direct) return direct;
+  let candidate = direct;
 
-  const address = normalizeText(doc?.address);
-  if (!address) return '';
+  if (!candidate) {
+    const address = String(doc?.address || '').trim();
+    if (address) {
+      const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+      candidate = parts[parts.length - 1] || '';
+    }
+  }
 
-  const isHcm =
-    address.includes('tp.hcm') ||
-    address.includes('tphcm') ||
-    address.includes('hcmc') ||
-    address.includes('ho chi minh') ||
-    address.includes('hò chí minh') ||
-    address.includes('ho chí minh');
+  if (!candidate) return '';
 
-  const isHanoi =
-    address.includes('ha noi') ||
-    address.includes('hanoi') ||
-    address.includes('hà nọi') ||
-    address.includes('ha noi');
+  const norm = normalizeText(candidate);
 
-  if (isHcm) return 'TP.HCM';
-  if (isHanoi) return 'Ha Noi';
-  return '';
+  // Mapping variations to standard names
+  if (
+    norm.includes('ho chi minh') ||
+    norm.includes('tp hcm') ||
+    norm.includes('hcmc') ||
+    norm === 'hcm' ||
+    norm === 'tphcm'
+  ) {
+    return 'TP.HCM';
+  }
+
+  if (norm.includes('ha noi') || norm === 'hn') {
+    return 'Hà Nội';
+  }
+
+  if (norm.includes('hai phong')) {
+    return 'Hải Phòng';
+  }
+
+  if (norm.includes('da nang')) {
+    return 'Đà Nẵng';
+  }
+
+  if (norm.includes('can tho')) {
+    return 'Cần Thơ';
+  }
+
+  // If no match but we have a candidate, return it as capitalized words
+  return candidate
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function cleanAddressUnit(s) {
@@ -81,19 +105,29 @@ function findAddressUnit(address, patterns) {
 }
 
 function inferDistrict(doc) {
-  return findAddressUnit(doc?.address, [
+  const parts = String(doc?.address || '').split(',').map(p => p.trim()).filter(Boolean);
+  
+  const patternMatch = findAddressUnit(doc?.address, [
     /\bDistrict\s*\d+\b/i,
     /\bDistrict\s+[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:Quan|Quận|Huyen|Huyện)\s*[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:TP\.?\s*)?(?:Thu\s*Duc|Thủ\s*Đức)\b/iu,
   ]);
+  if (patternMatch) return patternMatch;
+
+  // Fallback: 2nd to last part in a multi-part address is usually the district
+  if (parts.length >= 2) {
+    return parts[parts.length - 2];
+  }
+  return '';
 }
 
 function inferStreet(doc) {
   const rawAddress = String(doc?.address || '').trim();
   if (!rawAddress) return '';
 
-  const firstPart = cleanAddressUnit(rawAddress.split(',')[0] || '');
+  const parts = rawAddress.split(',').map(p => p.trim()).filter(Boolean);
+  const firstPart = parts[0] || '';
   if (!firstPart) return '';
 
   const alreadyStreetLike =
@@ -109,12 +143,21 @@ function inferStreet(doc) {
 }
 
 function inferWard(doc) {
-  return findAddressUnit(doc?.address, [
+  const parts = String(doc?.address || '').split(',').map(p => p.trim()).filter(Boolean);
+
+  const patternMatch = findAddressUnit(doc?.address, [
     /\bWard\s*\d+\b/i,
     /\bWard\s+[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:P\.?|Phuong|Phường)\s*[\p{L}\p{N}\s.-]+\b/iu,
     /\b(?:Xa|Xã|Thi\s*Tran|Thị\s*Trấn)\s*[\p{L}\p{N}\s.-]+\b/iu,
   ]);
+  if (patternMatch) return patternMatch;
+
+  // Fallback: 3rd to last part is often the ward
+  if (parts.length >= 3) {
+    return parts[parts.length - 3];
+  }
+  return '';
 }
 
 function inferSizeKey(doc) {
@@ -259,6 +302,26 @@ function parseUtilitiesParam(raw) {
     .filter(Boolean);
 }
 
+// GET /api/public/fields/location-filters
+router.get(
+  '/location-filters',
+  asyncHandler(async (req, res) => {
+    const fields = await Field.find({ status: { $ne: 'Deleted' } }).select('city address').lean();
+
+    const result = fields.map(f => ({
+      city: inferCity(f),
+      district: inferDistrict(f),
+      street: inferStreet(f),
+      ward: inferWard(f)
+    }));
+
+    res.json({
+      success: true,
+      data: result
+    });
+  })
+);
+
 // GET /api/public/fields
 router.get(
   '/',
@@ -281,7 +344,17 @@ router.get(
     const maxPriceInDatabase = getMaxEffectiveHourlyPrice(docs);
 
     if (normalizedQ) {
-      docs = docs.filter((d) => normalizeText(d?.fieldName).includes(normalizedQ));
+      docs = docs.filter((d) => {
+        const name = normalizeText(d?.fieldName);
+        const address = normalizeText(d?.address);
+        const cityDirect = normalizeText(d?.city);
+
+        return (
+          name.includes(normalizedQ) ||
+          address.includes(normalizedQ) ||
+          cityDirect.includes(normalizedQ)
+        );
+      });
     }
 
     // Price filter supports both `hourlyPrice` and legacy `price` schema.

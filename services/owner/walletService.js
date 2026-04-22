@@ -57,18 +57,25 @@ async function getOwnerWallet(ownerId) {
   return wallet;
 }
 
-async function getOwnerTransactions(ownerId, limit = 20, bookingType = null) {
+async function getOwnerTransactions(ownerId, limit = 20, type = null, bookingType = null) {
+  if (!ownerId) return [];
+  
   const wallet = await Wallet.findOne({ walletOwnerId: ownerId, walletOwnerModel: 'Owner' });
-
-  if (!wallet) {
-    return [];
-  }
+  if (!wallet) return [];
 
   const filter = {
     $or: [{ toWalletID: wallet._id }, { fromWalletID: wallet._id }]
   };
+  
   if (bookingType) {
     filter.bookingType = bookingType;
+    filter.type = { $ne: 'Withdraw' };
+  } else if (type && type !== 'All') {
+    if (type.includes(',')) {
+      filter.type = { $in: type.split(',') };
+    } else {
+      filter.type = type;
+    }
   }
 
   const transactions = await Transaction.find(filter)

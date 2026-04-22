@@ -41,10 +41,11 @@ if (!mongoUri) {
       console.log('Connected to MongoDB');
 
       // Start cron jobs after DB connection
-      const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob } = require('./utils/cronJobs');
+      const { startAutoCompleteJob, startOwnerDeletionJob, startManagerDeletionJob, startWithdrawJob } = require('./utils/cronJobs');
       startAutoCompleteJob();
       startOwnerDeletionJob();
       startManagerDeletionJob();
+      startWithdrawJob();
     })
     .catch(err => console.error('MongoDB connection error:', err));
 }

@@ -148,6 +148,7 @@ exports.getFieldWithServices = asyncHandler(async (req, res) => {
   const feedbacks = feedbackRows.map((x) => ({
     id: String(x._id),
     bookingDetailID: String(x.bookingDetailID),
+    bookingID: x.booking?._id ? String(x.booking._id) : '',
     rate: Number(x.rate) || 0,
     content: x.content || '',
     createdAt: x.createdAt,

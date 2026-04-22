@@ -167,7 +167,7 @@ async function main() {
           customerID: toObjectId(b.customerId),
           totalPrice: Number(b.totalPrice || 0),
           statusPayment: b.statusPayment || 'Pending',
-          status: b.status || 'Booked',
+          status: b.status || 'Active',
           refundReason: b.refundReason || '',
           createdAt: isoOrNow(b.createdAt),
           updatedAt: isoOrNow(b.updatedAt || b.createdAt),
