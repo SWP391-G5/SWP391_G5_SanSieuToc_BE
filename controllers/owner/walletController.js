@@ -111,7 +111,7 @@ exports.createWithdrawRequest = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: `Yêu cầu rút ${formatVnd(withdrawAmount)} đang chờ xử lý. Sẽ hoàn tất sau 12 tiếng.`,
+    message: `Yêu cầu rút ${formatVnd(withdrawAmount)} đang chờ xử lý. Sẽ hoàn tất sau 24 tiếng.`,
     transaction: transaction,
     newBalance: wallet.balance,
   });
