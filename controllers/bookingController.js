@@ -426,10 +426,13 @@ async function validateVoucher(req, res) {
     }
 
     const now = new Date();
+    const startOfToday = new Date(now.setHours(0, 0, 0, 0));
+    const endOfToday = new Date(now.setHours(23, 59, 59, 999));
+
     const voucher = await Voucher.findOne({
-      voucherName: voucherCode,
-      beginDate: { $lte: now },
-      endDate: { $gte: now },
+      voucherName: { $regex: new RegExp(`^${voucherCode}$`, 'i') },
+      beginDate: { $lte: endOfToday },
+      endDate: { $gte: startOfToday },
       quantity: { $gt: 0 },
     }).lean();
 
@@ -558,12 +561,15 @@ async function createBooking(req, res) {
 
     if (voucherCode) {
       const now = new Date();
+      const startOfToday = new Date(now.setHours(0, 0, 0, 0));
+      const endOfToday = new Date(now.setHours(23, 59, 59, 999));
+
       const updatedVoucher = await Voucher.findOneAndUpdate(
         {
-          voucherName: voucherCode,
+          voucherName: { $regex: new RegExp(`^${voucherCode}$`, 'i') },
           quantity: { $gt: 0 },
-          beginDate: { $lte: now },
-          endDate: { $gte: now }
+          beginDate: { $lte: endOfToday },
+          endDate: { $gte: startOfToday }
         },
         { $inc: { quantity: -1 } },
         { new: true }
