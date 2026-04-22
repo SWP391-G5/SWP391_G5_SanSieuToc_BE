@@ -8,6 +8,9 @@ const Feedback = require('../../models/Feedback');
 const BookingDetail = require('../../models/BookingDetail');
 const Field = require('../../models/Field');
 const managerScopeService = require('./managerScopeService');
+const mailer = require('../../utils/mailer');
+const UserAccount = require('../../models/UserAccount');
+const Booking = require('../../models/Booking');
 
 function toObjectIdLike(raw) {
   if (!raw) return null;
@@ -54,6 +57,7 @@ async function listFeedback(managerId, query = {}) {
   const fieldId = String(query.fieldId || '').trim();
   const q = String(query.q || '').trim();
   const rate = parseRate(query.rate);
+  const includeDeleted = String(query.includeDeleted || '').trim() === 'true';
 
   const page = Math.max(1, parseIntSafe(query.page, 1));
   const limit = Math.min(50, Math.max(5, parseIntSafe(query.limit, 10)));
@@ -70,8 +74,9 @@ async function listFeedback(managerId, query = {}) {
   // Pipeline: Feedback -> BookingDetail (contains fieldID) -> Field (to get owner)
   const matchStages = [];
 
-  // Exclude moderated-deleted feedback
-  matchStages.push({ $match: { isDeleted: { $ne: true } } });
+  // Include or exclude moderated-deleted feedback
+  if (includeDeleted) matchStages.push({ $match: { isDeleted: true } });
+  else matchStages.push({ $match: { isDeleted: { $ne: true } } });
 
   if (rate) {
     matchStages.push({ $match: { rate } });
@@ -134,6 +139,46 @@ async function listFeedback(managerId, query = {}) {
       },
     },
     { $unwind: { path: '$field', preserveNullAndEmptyArrays: true } },
+
+    // Join Booking -> UserAccount to get customer name/email for UI + email notify.
+    {
+      $lookup: {
+        from: 'bookings',
+        localField: 'bd.bookingID',
+        foreignField: '_id',
+        as: 'booking',
+      },
+    },
+    { $unwind: { path: '$booking', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        customerIdStr: {
+          $cond: [
+            { $eq: [{ $type: '$booking.customerID' }, 'objectId'] },
+            { $toString: '$booking.customerID' },
+            {
+              $cond: [
+                { $eq: [{ $type: '$booking.customerID' }, 'string'] },
+                '$booking.customerID',
+                { $toString: '$booking.customerID' },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: 'useraccounts',
+        let: { uid: '$customerIdStr' },
+        pipeline: [
+          { $match: { $expr: { $eq: [{ $toString: '$_id' }, '$$uid'] } } },
+          { $project: { _id: 1, email: 1, name: 1, username: 1, fullName: 1 } },
+        ],
+        as: 'customer',
+      },
+    },
+    { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
   ];
 
   if (ownerId) {
@@ -154,10 +199,19 @@ async function listFeedback(managerId, query = {}) {
               rate: 1,
               content: 1,
               createdAt: 1,
+              // Hide raw ids from FE table if desired; still keep them for actions.
               bookingDetailID: 1,
               fieldId: '$fieldIdStr',
               fieldName: { $ifNull: ['$field.fieldName', '$bd.fieldName'] },
               ownerId: { $toString: '$field.ownerID' },
+
+              customerName: { $ifNull: ['$customer.name', { $ifNull: ['$customer.fullName', '$customer.username'] }] },
+              customerEmail: '$customer.email',
+
+              // Soft-delete audit fields: needed by FE to display deletion reason & timestamp
+              isDeleted: 1,
+              deletedAt: 1,
+              deleteReason: 1,
             },
           },
         ],
@@ -319,6 +373,70 @@ async function deleteFeedback(managerId, feedbackId, payload = {}) {
     { new: true }
   ).lean();
 
+  // Best-effort email notification (do not fail the delete if email is not configured)
+  try {
+    // Feedback does NOT store user reference; derive customer from BookingDetail.bookingID -> Booking.customerID.
+    const booking = await Booking.findById(bd.bookingID).select('customerID').lean();
+    const userId = String(toObjectIdLike(booking?.customerID) || '').trim();
+    if (mongoose.isValidObjectId(userId)) {
+      const user = await UserAccount.findById(userId).select('email name username fullName').lean();
+      const email = user?.email;
+      if (email) {
+        await mailer.sendFeedbackDeletionNoticeEmail({
+          to: email,
+          name: user?.name || user?.fullName || user?.username || '',
+          fieldName: bd?.fieldName || '',
+          feedbackContent: updated?.content || '',
+          reason,
+        });
+      }
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  return { status: 200, body: { item: updated } };
+}
+
+async function restoreFeedback(managerId, feedbackId) {
+  if (!mongoose.isValidObjectId(String(managerId))) {
+    return { status: 401, body: { message: 'Unauthorized' } };
+  }
+  if (!mongoose.isValidObjectId(String(feedbackId))) {
+    return { status: 400, body: { message: 'Invalid feedbackId' } };
+  }
+
+  // Scope check: ensure feedback belongs to a managed field
+  const { fieldIds, status } = await getManagedFieldIds(managerId);
+  if (status !== 200) return { status, body: { message: 'Unauthorized' } };
+
+  const doc = await Feedback.findById(feedbackId).lean();
+  if (!doc) return { status: 404, body: { message: 'Feedback not found' } };
+  if (!doc.isDeleted) return { status: 409, body: { message: 'Feedback is not deleted' } };
+
+  const bd = await BookingDetail.findById(doc.bookingDetailID).lean();
+  if (!bd) return { status: 404, body: { message: 'Booking detail not found' } };
+
+  const fieldIdStr = String(toObjectIdLike(bd.fieldID) || '');
+  if (!fieldIdStr || !fieldIds.includes(fieldIdStr)) {
+    return { status: 403, body: { message: 'Forbidden' } };
+  }
+
+  const updated = await Feedback.findByIdAndUpdate(
+    feedbackId,
+    {
+      $set: {
+        isDeleted: false,
+      },
+      $unset: {
+        deletedAt: 1,
+        deletedBy: 1,
+        deleteReason: 1,
+      },
+    },
+    { new: true }
+  ).lean();
+
   return { status: 200, body: { item: updated } };
 }
 
@@ -326,4 +444,5 @@ module.exports = {
   listFeedback,
   getSummary,
   deleteFeedback,
+  restoreFeedback,
 };

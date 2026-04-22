@@ -6,7 +6,7 @@
 
 const cloudinary = require('./cloudinaryClient');
 
-const ALLOWED_IMAGE_FORMATS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+const ALLOWED_IMAGE_FORMATS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
 
 /**
  * uploadImageBuffer

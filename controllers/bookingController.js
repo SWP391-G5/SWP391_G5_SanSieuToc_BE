@@ -204,7 +204,7 @@ async function getMyBookings(req, res) {
       .lean();
 
     const detailIds = details.map(d => d._id);
-    const serviceHistories = await BookingServiceHistory.find({ 
+    const serviceHistories = await BookingServiceHistory.find({
       bookingDetailID: { $in: detailIds },
       status: { $ne: 'Cancelled' }
     }).lean();
@@ -241,6 +241,7 @@ async function getMyBookings(req, res) {
       const bDetails = detailsByBooking[b._id.toString()] || [];
 
       const field = bDetails[0]?.fieldID || {};
+      const fieldId = toIdString(bDetails[0]?.fieldID);
       const fieldName = bDetails[0]?.fieldName || (typeof field === 'object' ? field.fieldName : '') || '';
       const fieldImage = bDetails[0]?.fieldImage || (typeof field === 'object' && field.image ? field.image[0] : '') || '';
       const fieldAddress = typeof field === 'object' ? field.address : '';
@@ -297,7 +298,11 @@ async function getMyBookings(req, res) {
       const uniqueServicesList = Array.from(uniqueServicesMap.values());
       const hasFeedback = bDetails.some((d) => !!d.feedback);
       const isPaid = String(b?.statusPayment || '').trim() === 'Completed';
-      const canFeedback = isPaid && bDetails.some((d) => isDetailEnded(d) && !d.feedback);
+      const canFeedback = isPaid && bDetails.some((d) => {
+        const statusKey = String(d?.status || '').trim().toLowerCase();
+        if (statusKey === 'cancel' || statusKey === 'cancel request') return false;
+        return isDetailEnded(d);
+      });
 
       const statusMap = {
         Active: 'Active',
@@ -319,19 +324,30 @@ async function getMyBookings(req, res) {
         const servicesTotal = d.services?.totalPriceSnapShot || 0;
         console.log(`DEBUG allDetails - detailId: ${d._id}, hasServices: ${!!d.services}, servicesCount: ${servicesList.length}, servicesTotal: ${servicesTotal}`);
         return {
-          id: d._id,
+          id: String(d._id),
           date: d.startTime ? new Date(d.startTime).toISOString().split('T')[0] : '',
           startTime: d.startTime,
           endTime: d.endTime,
           status: d.status,
+          isEnded: isDetailEnded(d),
           priceSnapShot: d.priceSnapShot || 0,
           services: servicesList,
           servicesTotal,
+          feedback: d.feedback
+            ? {
+              id: String(d.feedback._id),
+              rate: d.feedback.rate,
+              content: d.feedback.content || '',
+              createdAt: d.feedback.createdAt,
+              updatedAt: d.feedback.updatedAt,
+            }
+            : null,
         };
       });
 
       return {
         id: b._id,
+        fieldId,
         fieldName,
         fieldImage,
         fieldAddress,
@@ -432,7 +448,7 @@ async function validateVoucher(req, res) {
     const discountPercent = voucher.discountValue || 0;
     const maxDiscount = voucher.maxDiscount || 0;
     let discountAmount = Math.floor(grandTotal * (discountPercent / 100));
-    
+
     if (maxDiscount > 0 && discountAmount > maxDiscount) {
       discountAmount = maxDiscount;
     }
@@ -452,7 +468,7 @@ async function validateVoucher(req, res) {
 
 async function createBooking(req, res) {
   const userId = req.user.sub || req.user.userId || req.user.id;
-  const { fieldId, timeSlots, grandTotal } = req.body;
+  const { fieldId, timeSlots, grandTotal, voucherCode } = req.body;
 
   console.log('=== CREATE BOOKING START ===');
   console.log('Full request body:', JSON.stringify(req.body));
@@ -535,9 +551,29 @@ async function createBooking(req, res) {
       totalPrice,
       statusPayment: 'Pending',
       status: 'Active',
+      voucherCode: voucherCode || '',
     });
     await booking.save();
     console.log('Booking saved:', booking._id);
+
+    if (voucherCode) {
+      const now = new Date();
+      const updatedVoucher = await Voucher.findOneAndUpdate(
+        {
+          voucherName: voucherCode,
+          quantity: { $gt: 0 },
+          beginDate: { $lte: now },
+          endDate: { $gte: now }
+        },
+        { $inc: { quantity: -1 } },
+        { new: true }
+      );
+      if (updatedVoucher) {
+        console.log(`Voucher decremented: ${voucherCode}, remaining: ${updatedVoucher.quantity}`);
+      } else {
+        console.log(`Failed to apply voucher or ran out of stock: ${voucherCode}`);
+      }
+    }
 
     for (const detail of slotDetails) {
       detail.bookingID = booking._id;
@@ -825,11 +861,11 @@ async function getFeedbackEligibility(req, res) {
         hasFeedback: !!feedback,
         feedback: feedback
           ? {
-              id: String(feedback._id),
-              rate: feedback.rate,
-              content: feedback.content || '',
-              createdAt: feedback.createdAt,
-            }
+            id: String(feedback._id),
+            rate: feedback.rate,
+            content: feedback.content || '',
+            createdAt: feedback.createdAt,
+          }
           : null,
       };
     });
@@ -851,6 +887,83 @@ async function getFeedbackEligibility(req, res) {
     });
   } catch (err) {
     console.error('getFeedbackEligibility error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
+async function getFeedbackEligibilityByField(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const { fieldId } = req.params;
+
+    if (!mongoose.isValidObjectId(fieldId)) {
+      return res.status(400).json({ message: 'Invalid fieldId.' });
+    }
+
+    const bookings = await Booking.find({
+      customerID: userId,
+      statusPayment: 'Completed',
+      status: { $ne: 'Cancel' },
+    }).lean();
+
+    if (!bookings.length) {
+      return res.json({ item: { fieldId, reviewableSlots: [] } });
+    }
+
+    const bIds = bookings.map((b) => b._id);
+    const details = await BookingDetail.find({
+      bookingID: { $in: bIds },
+      fieldID: fieldId,
+      status: { $ne: 'Cancel' },
+    }).lean();
+
+    if (!details.length) {
+      return res.json({ item: { fieldId, reviewableSlots: [] } });
+    }
+
+    const dIds = details.map((d) => d._id);
+    const feedbacks = await Feedback.find({
+      bookingDetailID: { $in: dIds },
+      isDeleted: false,
+    }).lean();
+
+    const fbMap = new Map();
+    for (const f of feedbacks) {
+      fbMap.set(String(f.bookingDetailID), f);
+    }
+
+    const slots = details
+      .map((d) => {
+        const fb = fbMap.get(String(d._id));
+        const ended = isDetailEnded(d);
+        return {
+          id: String(d._id),
+          startTime: d.startTime,
+          endTime: d.endTime,
+          isEnded: ended,
+          hasFeedback: !!fb,
+          feedback: fb
+            ? {
+              id: String(fb._id),
+              rate: fb.rate,
+              content: fb.content || '',
+              createdAt: fb.createdAt,
+            }
+            : null,
+        };
+      })
+      .filter((s) => s.isEnded)
+      .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+    return res.json({
+      item: {
+        fieldId,
+        isPaid: true,
+        reviewableSlots: slots,
+      },
+    });
+  } catch (err) {
+    console.error('getFeedbackEligibilityByField error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 }
@@ -909,10 +1022,115 @@ async function createFeedback(req, res) {
         rate: created.rate,
         content: created.content || '',
         createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
       },
     });
   } catch (err) {
     console.error('createFeedback error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
+async function updateFeedback(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const feedbackId = String(req.params?.feedbackId || '').trim();
+    const rate = Number(req.body?.rate);
+    const content = String(req.body?.content || '').trim();
+
+    if (!mongoose.isValidObjectId(feedbackId)) {
+      return res.status(400).json({ message: 'Invalid feedbackId.' });
+    }
+
+    if (!Number.isInteger(rate) || rate < 1 || rate > 5) {
+      return res.status(400).json({ message: 'Rate must be an integer between 1 and 5.' });
+    }
+
+    const feedback = await Feedback.findOne({ _id: feedbackId, isDeleted: false });
+    if (!feedback) {
+      return res.status(404).json({ message: 'Feedback not found.' });
+    }
+
+    const detail = await BookingDetail.findById(feedback.bookingDetailID).lean();
+    if (!detail) {
+      return res.status(404).json({ message: 'Booking detail not found.' });
+    }
+
+    const booking = await Booking.findOne({ _id: detail.bookingID, customerID: userId }).lean();
+    if (!booking) {
+      return res.status(403).json({ message: 'You cannot edit this feedback.' });
+    }
+
+    if (String(booking?.statusPayment || '').trim() !== 'Completed') {
+      return res.status(409).json({ message: 'You can only edit feedback for paid bookings.' });
+    }
+
+    if (!isDetailEnded(detail)) {
+      return res.status(409).json({ message: 'You can only edit feedback after the slot has ended.' });
+    }
+
+    feedback.rate = rate;
+    feedback.content = content;
+    await feedback.save();
+
+    return res.json({
+      message: 'Feedback updated successfully.',
+      item: {
+        id: String(feedback._id),
+        bookingDetailId: String(detail._id),
+        fieldId: toIdString(detail.fieldID),
+        fieldName: detail.fieldName || '',
+        rate: feedback.rate,
+        content: feedback.content || '',
+        createdAt: feedback.createdAt,
+        updatedAt: feedback.updatedAt,
+      },
+    });
+  } catch (err) {
+    console.error('updateFeedback error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
+async function deleteFeedback(req, res) {
+  try {
+    const userId = req.user.sub || req.user.userId || req.user.id;
+    const feedbackId = String(req.params?.feedbackId || '').trim();
+
+    if (!mongoose.isValidObjectId(feedbackId)) {
+      return res.status(400).json({ message: 'Invalid feedbackId.' });
+    }
+
+    const feedback = await Feedback.findOne({ _id: feedbackId, isDeleted: false });
+    if (!feedback) {
+      return res.status(404).json({ message: 'Feedback not found.' });
+    }
+
+    const detail = await BookingDetail.findById(feedback.bookingDetailID).lean();
+    if (!detail) {
+      // If detail is gone, still allow delete if they are the owner? 
+      // Better to check feedback ownership directly if we stored it, but we didn't.
+      // We rely on detail -> booking -> customerID
+      return res.status(404).json({ message: 'Booking detail not found.' });
+    }
+
+    const booking = await Booking.findOne({ _id: detail.bookingID, customerID: userId }).lean();
+    if (!booking) {
+      return res.status(403).json({ message: 'You cannot delete this feedback.' });
+    }
+
+    feedback.isDeleted = true;
+    feedback.deletedAt = new Date();
+    feedback.deletedBy = userId; // Even though it's user deleted, we store who did it
+    feedback.deleteReason = 'User deleted';
+    await feedback.save();
+
+    return res.json({
+      success: true,
+      message: 'Feedback deleted successfully.',
+    });
+  } catch (err) {
+    console.error('deleteFeedback error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 }
@@ -938,13 +1156,13 @@ async function getOwnerRefundRequests(req, res) {
     }
     const bookingIds = [...new Set(details.map(d => d.bookingID.toString()))];
 
-    const bookings = await Booking.find({ 
+    const bookings = await Booking.find({
       _id: { $in: bookingIds },
       status: 'Cancel Request'
     }).lean();
 
     const detailIds = details.map(d => d._id);
-    const serviceHistories = await BookingServiceHistory.find({ 
+    const serviceHistories = await BookingServiceHistory.find({
       bookingDetailID: { $in: detailIds },
       status: { $ne: 'Cancelled' }
     }).lean();
@@ -952,31 +1170,31 @@ async function getOwnerRefundRequests(req, res) {
     const refunds = bookings.map(b => {
       const isPartialCancel = b.refundDetailIds && b.refundDetailIds.length > 0;
       console.log('getOwnerRefundRequests - b.refundDetailIds raw:', b.refundDetailIds);
-      
+
       const bookingDetails = details.filter(d => d.bookingID.toString() === b._id.toString());
-      
+
       console.log('getOwnerRefundRequests - booking:', b._id);
       console.log('getOwnerRefundRequests - isPartialCancel:', isPartialCancel);
       console.log('getOwnerRefundRequests - refundDetailIds:', b.refundDetailIds);
       console.log('getOwnerRefundRequests - bookingDetails count:', bookingDetails.length);
-      
+
       let serviceTotal = 0;
       const bookingDetailIds = bookingDetails.map(d => d._id.toString());
-      const bookingServiceHistories = serviceHistories.filter(sh => 
+      const bookingServiceHistories = serviceHistories.filter(sh =>
         bookingDetailIds.includes(sh.bookingDetailID.toString())
       );
-      
+
       let fieldRefund = 0;
-      
+
       if (isPartialCancel) {
         const refundDetailIds = b.refundDetailIds;
-        
+
         for (const d of bookingDetails) {
           if (refundDetailIds.includes(d._id.toString())) {
             fieldRefund += Math.floor((d.priceSnapShot || 0) * 0.8);
           }
         }
-        
+
         for (const sh of bookingServiceHistories) {
           if (refundDetailIds.includes(sh.bookingDetailID.toString())) {
             serviceTotal += sh.totalPriceSnapShot || 0;
@@ -1037,13 +1255,13 @@ async function approveRefund(req, res) {
     console.log('approveRefund - isPartialCancel:', isPartialCancel);
     console.log('approveRefund - refundDetailIds:', booking.refundDetailIds);
     console.log('approveRefund - allDetails.length:', allDetails.length);
-    
-    const detailIdsToRefund = isPartialCancel 
-      ? booking.refundDetailIds 
+
+    const detailIdsToRefund = isPartialCancel
+      ? booking.refundDetailIds
       : allDetails.map(d => d._id.toString());
 
     console.log('approveRefund - detailIdsToRefund:', detailIdsToRefund);
-    
+
     const details = allDetails.filter(d => detailIdsToRefund.includes(d._id.toString()));
     console.log('approveRefund - details to refund count:', details.length);
     console.log('approveRefund - details priceSnapShot:', details.map(d => d.priceSnapShot));
@@ -1178,20 +1396,20 @@ async function approveRefund(req, res) {
       }
     }
 
-      if (isPartialCancel) {
+    if (isPartialCancel) {
       console.log('approveRefund - isPartialCancel = true, processing partial');
       const cancelledDetailObjectIds = detailIdsToRefund.map(id => new mongoose.Types.ObjectId(id));
       await BookingDetail.updateMany(
         { _id: { $in: cancelledDetailObjectIds } },
         { $set: { status: 'Cancel' } }
       );
-      
+
       await BookingServiceHistory.updateMany(
         { bookingDetailID: { $in: cancelledDetailObjectIds } },
         { $set: { status: 'Cancel' } }
       );
-      
-      const remainingActiveDetails = allDetails.filter(d => 
+
+      const remainingActiveDetails = allDetails.filter(d =>
         !detailIdsToRefund.includes(d._id.toString()) && d.status !== 'Cancel'
       );
       console.log('approveRefund - remainingActiveDetails count:', remainingActiveDetails.length);
@@ -1260,13 +1478,16 @@ async function rejectRefund(req, res) {
 
 module.exports = {
   getMyBookings,
-getBookedSlots,
+  getBookedSlots,
   createBooking,
   validateVoucher,
   cancelBooking,
   cancelSlot,
   getFeedbackEligibility,
+  getFeedbackEligibilityByField,
   createFeedback,
+  updateFeedback,
+  deleteFeedback,
   getOwnerRefundRequests,
   approveRefund,
   rejectRefund,

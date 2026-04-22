@@ -11,5 +11,7 @@ router.use(authorizeRoles(['Customer', 'Owner']));
 
 router.post('/', asyncHandler(postController.createPost));
 router.get('/my-posts', asyncHandler(postController.getMyPosts));
+router.put('/:id', asyncHandler(postController.updateMyPost));
+router.delete('/:id', asyncHandler(postController.deleteMyPost));
 
 module.exports = router;
