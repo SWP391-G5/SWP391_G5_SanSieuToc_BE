@@ -32,18 +32,30 @@ async function getServiceBookingsForOwner(req, res) {
     }
 
     const historyMap = {};
+    const serviceDetailIds = new Set();
     for (const sh of serviceHistories) {
       historyMap[sh.bookingDetailID.toString()] = sh;
+      serviceDetailIds.add(sh.bookingDetailID.toString());
     }
 
-    const filteredDetails = details.filter((d) => historyMap[d._id.toString()]);
+    const filteredDetails = details.filter((d) => serviceDetailIds.has(d._id.toString()));
     const bookingIds = [...new Set(filteredDetails.map((d) => d.bookingID.toString()))];
 
-    const query = { _id: { $in: bookingIds } };
+    let bookings;
     if (status && status !== 'All') {
-      query.status = status;
+      const statusMap = {
+        'Active': { $in: ['Active', 'Booked'] },
+        'Cancel Request': 'Cancel Request',
+        'Cancelled': 'Cancelled',
+      };
+      const query = { _id: { $in: bookingIds }, status: statusMap[status] || status };
+      bookings = await Booking.find(query).lean();
+    } else {
+      bookings = await Booking.find({ _id: { $in: bookingIds } }).lean();
     }
-    const bookings = await Booking.find(query).lean();
+    
+    const validBookingIds = new Set(bookings.map(b => b._id.toString()));
+    const finalDetails = filteredDetails.filter(d => validBookingIds.has(d.bookingID.toString()));
 
     const customerIds = [...new Set(bookings.map((b) => b.customerID.toString()))];
     const customers = await UserAccount.find({ _id: { $in: customerIds } }, 'name email phone').lean();
@@ -52,7 +64,7 @@ async function getServiceBookingsForOwner(req, res) {
       customerMap[c._id.toString()] = c;
     }
 
-    const result = filteredDetails
+    const result = finalDetails
       .filter((d) => historyMap[d._id.toString()])
       .map((d) => {
         const sh = historyMap[d._id.toString()];

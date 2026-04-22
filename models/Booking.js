@@ -15,8 +15,12 @@ const BookingSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Booked', 'Cancel Request', 'Cancel'],
-      default: 'Booked',
+      enum: ['Active', 'Cancel Request', 'Cancelled', 'Ended'],
+      default: 'Active',
+    },
+    finalDate: {
+      type: Date,
+      default: null,
     },
     refundReason: {
       type: String,
