@@ -23,8 +23,16 @@ async function deleteFeedback(req, res) {
   return res.status(status).json(body);
 }
 
+async function restoreFeedback(req, res) {
+  const managerId = req.user?.sub;
+  const feedbackId = req.params.id;
+  const { status, body } = await feedbackService.restoreFeedback(managerId, feedbackId);
+  return res.status(status).json(body);
+}
+
 module.exports = {
   listFeedback,
   getSummary,
   deleteFeedback,
+  restoreFeedback,
 };
