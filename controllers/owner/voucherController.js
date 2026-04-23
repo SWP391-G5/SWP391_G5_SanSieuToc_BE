@@ -31,8 +31,18 @@ exports.createVoucher = async (req, res) => {
       if (end <= start) {
          return res.status(400).json({ success: false, message: 'End date must be after start date' });
       }
+      if (discountValue <= 0 || discountValue > 100) {
+         return res.status(400).json({ success: false, message: 'Discount percentage must be between 1 and 100' });
+      }
       if (maxDiscount < 0 || maxDiscount > 9999999) {
          return res.status(400).json({ success: false, message: 'Max discount must be between 0 and 9,999,999' });
+      }
+
+      if (!/^[A-Za-z0-9]+$/.test(voucherName)) {
+         return res.status(400).json({ success: false, message: 'Voucher code can only contain letters and numbers' });
+      }
+      if (voucherName.length > 50) {
+         return res.status(400).json({ success: false, message: 'Voucher code must be at most 50 characters' });
       }
 
       const existing = await Voucher.findOne({ voucherName: { $regex: new RegExp(`^${voucherName}$`, 'i') }, ownerID: ownerId });
@@ -91,6 +101,15 @@ exports.updateVoucher = async (req, res) => {
          }
       }
 
+      if (voucherName) {
+         if (!/^[A-Za-z0-9]+$/.test(voucherName)) {
+            return res.status(400).json({ success: false, message: 'Voucher code can only contain letters and numbers' });
+         }
+         if (voucherName.length > 50) {
+            return res.status(400).json({ success: false, message: 'Voucher code must be at most 50 characters' });
+         }
+      }
+
       if (voucherName && voucherName.trim().toUpperCase() !== voucher.voucherName.toUpperCase()) {
          const existing = await Voucher.findOne({
             voucherName: { $regex: new RegExp(`^${voucherName}$`, 'i') },
@@ -102,7 +121,12 @@ exports.updateVoucher = async (req, res) => {
          voucher.voucherName = voucherName.trim().toUpperCase();
       }
 
-      if (discountValue !== undefined) voucher.discountValue = discountValue;
+      if (discountValue !== undefined) {
+         if (discountValue <= 0 || discountValue > 100) {
+            return res.status(400).json({ success: false, message: 'Discount percentage must be between 1 and 100' });
+         }
+         voucher.discountValue = discountValue;
+      }
       if (beginDate) voucher.beginDate = beginDate;
       if (endDate) voucher.endDate = endDate;
       if (quantity !== undefined) voucher.quantity = quantity;
