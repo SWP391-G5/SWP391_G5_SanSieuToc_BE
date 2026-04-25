@@ -61,13 +61,25 @@ function validateEvidence(list) {
 async function ownerHasCustomerBooking({ ownerId, customerId }) {
   if (!mongoose.isValidObjectId(ownerId) || !mongoose.isValidObjectId(customerId)) return false;
 
-  const fieldIds = await Field.find({ ownerID: ownerId, status: { $ne: 'Deleted' } }).distinct('_id');
+  const oId = new mongoose.Types.ObjectId(ownerId);
+  const cId = new mongoose.Types.ObjectId(customerId);
+
+  const fieldIds = await Field.find({ ownerID: oId, status: { $ne: 'Deleted' } }).distinct('_id');
   if (!fieldIds.length) return false;
 
-  const bookingIds = await Booking.find({ customerID: customerId }).distinct('_id');
+  // Since fieldID in BookingDetail might be stored as String or ObjectId (it is Mixed type),
+  // we should check for both.
+  const fieldIdStrings = fieldIds.map((id) => id.toString());
+  const combinedFieldIds = [...fieldIds, ...fieldIdStrings];
+
+  const bookingIds = await Booking.find({ customerID: cId }).distinct('_id');
   if (!bookingIds.length) return false;
 
-  const any = await BookingDetail.findOne({ bookingID: { $in: bookingIds }, fieldID: { $in: fieldIds } }).select('_id');
+  const any = await BookingDetail.findOne({
+    bookingID: { $in: bookingIds },
+    fieldID: { $in: combinedFieldIds },
+  }).select('_id');
+
   return Boolean(any);
 }
 
@@ -75,10 +87,15 @@ async function listEligibleCustomers(req, res) {
   const ownerId = req.user?.sub;
   if (!mongoose.isValidObjectId(ownerId)) return res.status(401).json({ message: 'Unauthorized' });
 
-  const fieldIds = await Field.find({ ownerID: ownerId, status: { $ne: 'Deleted' } }).distinct('_id');
+  const oId = new mongoose.Types.ObjectId(ownerId);
+
+  const fieldIds = await Field.find({ ownerID: oId, status: { $ne: 'Deleted' } }).distinct('_id');
   if (!fieldIds.length) return res.json({ items: [] });
 
-  const bookingIds = await BookingDetail.find({ fieldID: { $in: fieldIds } }).distinct('bookingID');
+  const fieldIdStrings = fieldIds.map((id) => id.toString());
+  const combinedFieldIds = [...fieldIds, ...fieldIdStrings];
+
+  const bookingIds = await BookingDetail.find({ fieldID: { $in: combinedFieldIds } }).distinct('bookingID');
   if (!bookingIds.length) return res.json({ items: [] });
 
   const customerIds = await Booking.find({ _id: { $in: bookingIds } }).distinct('customerID');
