@@ -130,7 +130,7 @@ async function createField(req, res) {
       return res.status(400).json({ message: 'Giờ đóng cửa là bắt buộc.' });
    }
    if (hourlyPrice === undefined || hourlyPrice === null || String(hourlyPrice).trim() === '') {
-      return res.status(400).json({ message: 'Giá/giờ là bắt buộc.' });
+      return res.status(400).json({ message: 'Giá/slot là bắt buộc.' });
    }
    if (slotDuration === undefined || slotDuration === null || String(slotDuration).trim() === '') {
       return res.status(400).json({ message: 'Thời lượng slot là bắt buộc.' });
@@ -138,7 +138,7 @@ async function createField(req, res) {
 
    const hourlyPriceNumber = Number(hourlyPrice);
    if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
-      return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
+      return res.status(400).json({ message: 'Giá/slot không hợp lệ.' });
    }
 
    const slotDurationNumber = Number(slotDuration);
@@ -165,6 +165,10 @@ async function createField(req, res) {
    }).lean();
    if (duplicate) {
       return res.status(409).json({ message: 'Tên sân đã tồn tại. Vui lòng chọn tên khác.' });
+   }
+
+   if (Array.isArray(image) && image.length > 5) {
+      return res.status(400).json({ message: 'Chỉ được phép tải lên tối đa 5 hình ảnh.' });
    }
 
    const imageUrls = await processImages(image);
@@ -244,7 +248,7 @@ async function updateField(req, res) {
    if (hourlyPrice !== undefined) {
       const hourlyPriceNumber = Number(hourlyPrice);
       if (Number.isNaN(hourlyPriceNumber) || hourlyPriceNumber < 0) {
-         return res.status(400).json({ message: 'Giá/giờ không hợp lệ.' });
+         return res.status(400).json({ message: 'Giá/slot không hợp lệ.' });
       }
       field.hourlyPrice = hourlyPriceNumber;
       field.price = hourlyPriceNumber;
@@ -286,6 +290,9 @@ async function updateField(req, res) {
          : [];
    }
    if (image !== undefined) {
+      if (Array.isArray(image) && image.length > 5) {
+         return res.status(400).json({ message: 'Chỉ được phép tải lên tối đa 5 hình ảnh.' });
+      }
       field.image = await processImages(image);
    }
 
