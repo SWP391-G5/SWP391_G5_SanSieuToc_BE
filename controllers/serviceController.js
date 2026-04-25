@@ -1,4 +1,5 @@
 const Service = require('../models/Service');
+const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const BookingDetail = require('../models/BookingDetail');
 const BookingServiceHistory = require('../models/BookingServiceHistory');
@@ -70,33 +71,39 @@ async function getMyServiceHistory(req, res) {
       bookingID: { $in: bookingIds }
     }).lean();
     console.log('Found bookingDetails:', bookingDetails.length);
+    console.log('Sample bookingDetail:', JSON.stringify(bookingDetails[0]));
     
     if (bookingDetails.length === 0) {
       return res.json({ services: [] });
     }
     
-    const detailIds = bookingDetails.map(d => d._id);
+    const detailIds = bookingDetails.map(d => d._id.toString());
     
     const serviceHistories = await BookingServiceHistory.find({ 
       bookingDetailID: { $in: detailIds }
-    }).populate('bookingDetailID', 'fieldName fieldAddress startTime').lean();
+    }).lean();
     console.log('Found serviceHistories:', serviceHistories.length);
     
     const result = serviceHistories.map(sh => {
-      const detail = bookingDetails.find(d => d._id.toString() === sh.bookingDetailID.toString());
+      const detailId = sh.bookingDetailID?.toString();
+      const detail = bookingDetails.find(d => d._id.toString() === detailId);
       const booking = bookings.find(b => b._id.toString() === detail?.bookingID?.toString());
+      const dateStr = detail?.startTime ? new Date(detail.startTime).toISOString().split('T')[0] : '';
+      const timeStr = detail?.startTime ? new Date(detail.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
+      const fieldName = detail?.fieldName || 'Unknown';
       return {
         id: sh._id,
-        fieldName: detail?.fieldName || '',
+        bookingDetailId: detailId,
+        fieldName: fieldName,
         fieldAddress: detail?.fieldAddress || '',
-        date: detail?.startTime ? new Date(detail.startTime).toISOString().split('T')[0] : '',
-        time: detail?.startTime ? new Date(detail.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '',
+        slotInfo: `${dateStr} ${timeStr}`,
         services: sh.service || [],
         totalPrice: sh.totalPriceSnapShot || 0,
         status: booking?.status || '',
-        statusPayment: booking?.statusPayment || ''
+        statusPayment: booking?.statusPayment || '',
+        createdAt: sh.createdAt
       };
-    });
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     
     console.log('Result:', result);
     res.json({ services: result });
@@ -144,6 +151,18 @@ async function bookServices(req, res) {
       price: s.price,
       quantity: s.quantity || 1,
     }));
+
+    for (const s of newServices) {
+      const service = await Service.findById(s.serviceId);
+      if (!service) {
+        return res.status(404).json({ message: `Service ${s.serviceName} not found` });
+      }
+      if (service.stock < s.quantity) {
+        return res.status(400).json({ message: `Not enough stock for ${s.serviceName}. Available: ${service.stock}` });
+      }
+      service.stock -= s.quantity;
+      await service.save();
+    }
     
     const calculatedTotalPrice = newServices.reduce((sum, s) => sum + (s.price * s.quantity), 0);
     const finalTotal = totalPrice || calculatedTotalPrice;

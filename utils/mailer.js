@@ -2,17 +2,108 @@ const nodemailer = require('nodemailer');
 
 let cachedTransporter;
 
-const isEmailConfigured = () => {
-  const emailUser = process.env.EMAIL_USER;
-  const emailPassword = process.env.EMAIL_PASSWORD;
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return ch;
+    }
+  });
+}
 
-  return Boolean(
-    emailUser &&
-    emailPassword &&
-    emailUser !== 'your-email@gmail.com' &&
-    emailPassword !== 'your-app-password' &&
-    emailUser.includes('@')
-  );
+function renderEmailShell({
+  title,
+  subtitle,
+  accent = '#6dff9e',
+  headerBg = '#0d6100',
+  preheader,
+  contentHtml,
+  footerText,
+}) {
+  const safeTitle = escapeHtml(title || 'Sân Siêu Tốc');
+  const safeSubtitle = escapeHtml(subtitle || '');
+  const safePreheader = escapeHtml(preheader || '');
+  const safeFooterText = escapeHtml(footerText || 'Trân trọng, Sân Siêu Tốc');
+
+  // Table-based layout for better compatibility (especially Outlook)
+  return `
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">${safePreheader}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5; margin:0; padding:0;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background:#ffffff; border-radius:10px; overflow:hidden; font-family:Arial, sans-serif;">
+          <tr>
+            <td style="background:${headerBg}; padding:18px 20px; text-align:center;">
+              <div style="font-size:22px; line-height:28px; font-weight:700; color:#ffffff;">${safeTitle}</div>
+              ${safeSubtitle ? `<div style="margin-top:6px; font-size:14px; line-height:18px; color:#ffffff; opacity:0.95;">${safeSubtitle}</div>` : ''}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 20px;">
+              ${contentHtml || ''}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:14px 20px; border-top:1px solid #e9e9e9; color:#666; font-size:12px; line-height:16px;">
+              ${safeFooterText}
+              <div style="margin-top:8px; color:${accent};">&nbsp;</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+  `;
+}
+
+function renderInfoCard({ title, accent = '#6dff9e', rows = [] }) {
+  const safeTitle = escapeHtml(title || 'Thông tin');
+  const renderedRows = rows
+    .filter((r) => r && (r.label || r.value))
+    .map(({ label, value, valueStyle }) => {
+      const safeLabel = escapeHtml(label || '');
+      const safeValue = escapeHtml(value ?? '');
+      const extra = valueStyle ? ` ${valueStyle}` : '';
+      return `
+        <tr>
+          <td style="padding:6px 0; color:#333; font-size:14px; width:160px; vertical-align:top;"><strong>${safeLabel}</strong></td>
+          <td style="padding:6px 0; color:#333; font-size:14px; vertical-align:top;${extra}">${safeValue}</td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #ececec; border-left:4px solid ${accent}; border-radius:10px; padding:0; margin:14px 0 0;">
+      <tr>
+        <td style="padding:14px 14px 12px;">
+          <div style="font-size:16px; font-weight:700; color:#333; margin:0 0 8px;">${safeTitle}</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            ${renderedRows}
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+const isEmailConfigured = () => {
+  const emailUser = String(process.env.EMAIL_USER || '').trim();
+  const emailPassword = String(process.env.EMAIL_PASSWORD || '').trim();
+
+  // Only validate presence + basic email shape.
+  // Do NOT block passwords that contain spaces (Gmail App Password often contains spaces).
+  return Boolean(emailUser && emailPassword && emailUser.includes('@'));
 };
 
 /**
@@ -117,11 +208,40 @@ async function sendAccountCredentialsEmail({ to, name, username, password, role 
     'Vui lòng đăng nhập và đổi mật khẩu ngay sau khi đăng nhập.',
   ].join('\n');
 
+  const html = renderEmailShell({
+    title: 'Sân Siêu Tốc',
+    subtitle: 'Thông tin tài khoản',
+    headerBg: '#0d6100',
+    accent: '#6dff9e',
+    preheader: `Tài khoản ${safeRole} đã được tạo cho bạn`,
+    contentHtml: `
+      <div style="color:#333; font-size:14px; line-height:20px;">Xin chào <strong>${escapeHtml(safeName)}</strong>,</div>
+      <div style="margin-top:8px; color:#333; font-size:14px; line-height:20px;">Hệ thống đã tạo tài khoản <strong>${escapeHtml(safeRole)}</strong> cho bạn. Vui lòng sử dụng thông tin bên dưới để đăng nhập.</div>
+      ${renderInfoCard({
+        title: 'Thông tin đăng nhập',
+        accent: '#6dff9e',
+        rows: [
+          { label: 'Vai trò', value: safeRole },
+          { label: 'Tên đăng nhập', value: username },
+          {
+            label: 'Mật khẩu',
+            value: password,
+            valueStyle:
+              'font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:#f7f7f7; padding:2px 6px; border-radius:6px;',
+          },
+        ],
+      })}
+      <div style="margin-top:14px; color:#666; font-size:13px; line-height:18px;">Vì lý do bảo mật, hãy đổi mật khẩu ngay sau khi đăng nhập.</div>
+    `,
+    footerText: 'Email này được gửi tự động. Nếu bạn không yêu cầu tạo tài khoản, vui lòng liên hệ quản trị viên.',
+  });
+
   return getTransporter().sendMail({
     from: user,
     to,
     subject,
     text,
+    html,
   });
 }
 
@@ -367,11 +487,35 @@ async function sendManagerDeletionNoticeEmail({ to, name, scheduledAt, adminEmai
     'Sân Siêu Tốc',
   ].join('\n');
 
+  const html = renderEmailShell({
+    title: 'Sân Siêu Tốc',
+    subtitle: 'Thông báo xóa tài khoản Quản lý',
+    headerBg: '#ff9632',
+    accent: '#ff9632',
+    preheader: `Tài khoản Quản lý sẽ bị xóa vào ${safeDate}`,
+    contentHtml: `
+      <div style="color:#333; font-size:14px; line-height:20px;">Xin chào <strong>${escapeHtml(safeName)}</strong>,</div>
+      <div style="margin-top:8px; color:#333; font-size:14px; line-height:20px;">Hệ thống nhận được yêu cầu xóa tài khoản <strong>Quản lý</strong> của bạn.</div>
+      <div style="margin-top:8px; color:#333; font-size:14px; line-height:20px;">Bạn có <strong>3 ngày</strong> để rút hết số dư trong ví (nếu có) trước khi tài khoản bị xóa.</div>
+      ${renderInfoCard({
+        title: 'Chi tiết',
+        accent: '#ff9632',
+        rows: [
+          { label: 'Thời gian dự kiến xóa', value: safeDate },
+          { label: 'Liên hệ quản trị viên', value: safeAdminEmail },
+        ],
+      })}
+      <div style="margin-top:14px; color:#666; font-size:13px; line-height:18px;">Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên để được hỗ trợ.</div>
+    `,
+    footerText: 'Trân trọng, Sân Siêu Tốc',
+  });
+
   return getTransporter().sendMail({
     from: user,
     to,
     subject,
     text,
+    html,
   });
 }
 
@@ -396,11 +540,94 @@ async function sendOwnerDeletionScheduledEmail({ to, name, scheduledAt, adminEma
     'Sân Siêu Tốc',
   ].join('\n');
 
+  const html = renderEmailShell({
+    title: 'Sân Siêu Tốc',
+    subtitle: 'Thông báo xóa tài khoản Chủ sân',
+    headerBg: '#ff9632',
+    accent: '#ff9632',
+    preheader: `Tài khoản Chủ sân sẽ bị xóa vào ${safeDate}`,
+    contentHtml: `
+      <div style="color:#333; font-size:14px; line-height:20px;">Xin chào <strong>${escapeHtml(safeName)}</strong>,</div>
+      <div style="margin-top:8px; color:#333; font-size:14px; line-height:20px;">Hệ thống nhận được yêu cầu xóa tài khoản <strong>Chủ sân</strong> của bạn.</div>
+      <div style="margin-top:8px; color:#333; font-size:14px; line-height:20px;">Bạn có <strong>3 ngày</strong> để rút hết số dư trong ví (nếu có) trước khi tài khoản bị xóa.</div>
+      ${renderInfoCard({
+        title: 'Chi tiết',
+        accent: '#ff9632',
+        rows: [
+          { label: 'Thời gian dự kiến xóa', value: safeDate },
+          { label: 'Liên hệ quản trị viên', value: safeAdminEmail },
+        ],
+      })}
+      <div style="margin-top:14px; color:#666; font-size:13px; line-height:18px;">Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên để được hỗ trợ.</div>
+    `,
+    footerText: 'Trân trọng, Sân Siêu Tốc',
+  });
+
   return getTransporter().sendMail({
     from: user,
     to,
     subject,
     text,
+    html,
+  });
+}
+
+async function sendFeedbackDeletionNoticeEmail({ to, name, fieldName, feedbackContent, reason }) {
+  const user = process.env.EMAIL_USER;
+  const subject = 'Sân Siêu Tốc - Thông báo Feedback vi phạm';
+  const safeName = name || 'bạn';
+  const safeFieldName = fieldName || 'sân';
+  const safeReason = reason || 'Vi phạm quy định cộng đồng.';
+  const safeContent = String(feedbackContent || '').trim();
+
+  const text = [
+    `Xin chào ${safeName},`,
+    '',
+    'Feedback của bạn đã bị xóa do vi phạm quy định cộng đồng.',
+    '',
+    `Sân: ${safeFieldName}`,
+    safeContent ? `Nội dung feedback: ${safeContent}` : null,
+    `Lý do: ${safeReason}`,
+    '',
+    'Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên để được hỗ trợ.',
+    '',
+    'Trân trọng,',
+    'Sân Siêu Tốc',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  // HTML theme: reuse the layout style of booking confirmation email
+  // (gradient header + light container + left border card)
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #ffb86b, #ff4d4d); padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #5a0b0b; margin: 0;">Sân Siêu Tốc</h1>
+        <p style="color: #5a0b0b; margin: 5px 0 0;">Thông báo Feedback vi phạm</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
+        <p>Xin chào <strong>${safeName}</strong>,</p>
+        <p>Feedback của bạn đã bị xóa do vi phạm quy định cộng đồng.</p>
+
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ff4d4d;">
+          <h3 style="margin: 0 0 10px; color: #333;">Chi tiết</h3>
+          <p style="margin: 5px 0;"><strong>Sân:</strong> ${safeFieldName}</p>
+          ${safeContent ? `<p style="margin: 5px 0;"><strong>Nội dung feedback:</strong> ${safeContent}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Lý do:</strong> <span style="color: #ff4d4d; font-weight: bold;">${safeReason}</span></p>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên để được hỗ trợ.</p>
+        <p style="color: #666; font-size: 14px; margin-top: 14px;">Trân trọng,<br/>Sân Siêu Tốc</p>
+      </div>
+    </div>
+  `;
+
+  return getTransporter().sendMail({
+    from: user,
+    to,
+    subject,
+    text,
+    html,
   });
 }
 
@@ -416,4 +643,5 @@ module.exports = {
   sendWalletRefundEmail,
   sendManagerDeletionNoticeEmail,
   sendOwnerDeletionScheduledEmail,
+  sendFeedbackDeletionNoticeEmail,
 };
