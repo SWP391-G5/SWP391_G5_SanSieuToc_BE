@@ -469,6 +469,7 @@ async function validateVoucher(req, res) {
   }
 }
 
+
 async function createBooking(req, res) {
   const userId = req.user.sub || req.user.userId || req.user.id;
   const { fieldId, timeSlots, grandTotal, voucherCode } = req.body;
