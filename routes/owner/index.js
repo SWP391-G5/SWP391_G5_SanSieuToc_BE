@@ -11,6 +11,7 @@ const ownerWalletRoutes = require('./wallet');
 const ownerServiceBookingRoutes = require('./serviceBookingRoutes');
 const ownerRevenueRoutes = require('./revenue');
 const ownerReportsRoutes = require('./reports');
+const ownerFeedbackRoutes = require('./feedbacks');
 const ownerVoucherRoutes = require('./voucherRoutes');
 
 const router = express.Router();
@@ -20,6 +21,7 @@ router.use('/bookings', ownerBookingRoutes);
 router.use('/service-bookings', ownerServiceBookingRoutes);
 router.use('/revenue', ownerRevenueRoutes);
 router.use('/reports', ownerReportsRoutes);
+router.use('/feedbacks', ownerFeedbackRoutes);
 router.use('/vouchers', ownerVoucherRoutes);
 router.use('/', ownerWalletRoutes);
 
