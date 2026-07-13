@@ -4,8 +4,6 @@
   "description": "sansieutocbe",
   "main": "server.js",
   "scripts": {
-
-
     "start": "nodemon server",
     "test": "jest"
   },
